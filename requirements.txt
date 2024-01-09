@@ -1,0 +1,8 @@
+openai-whisper
+yt_dlp
+h5py
+pandas
+python-dotenv
+tables
+langchain
+langchain-openai
