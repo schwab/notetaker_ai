@@ -6,3 +6,6 @@ python-dotenv
 tables
 langchain
 langchain-openai
+click
+questionary
+rich

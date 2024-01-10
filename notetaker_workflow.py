@@ -19,6 +19,13 @@ class NotetakerWorkflow():
                 self.generate_topics(key)
                 
     def generate_topics(self, key):
+        """Creates topics for a transcript.
+        Uses the LLM to generate topics for a transcript.
+        by batching the transcript into 10 rows at a time.
+
+        Args:
+            key (_type_): _description_
+        """
         print("Processing: ", key)
         index = 0
         batchsize = 10
