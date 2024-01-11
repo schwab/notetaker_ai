@@ -28,6 +28,7 @@ class ManageHDF5:
         
         key = os.path.join(base, key)
         df.to_hdf(filename, key=key, format='table', append=append)
+        print(f"Saved df to hdf5 file at {key}")
          
     def save_to_hdf5(self, data:dict, key:str, filename=HDF5_PATH, base_key=BASE_TRANSCRIPTS_KEY ):
         """Save data to hdf5 file.
