@@ -2,10 +2,13 @@ import h5py
 import pandas as pd
 import os
 from dotenv import load_dotenv
+from manage_llm import LLMManager
+
 
 load_dotenv()
 HDF5_PATH = os.getenv("HDF5_PATH")
-BASE_TRANSCRIPTS_KEY = os.getenv("BASE_TRANSCRIPTS_KEY")
+BASE_TRANSCRIPTS_KEY = os.getenv("BASE_TRANSCRIPTS_KEY", "/transcripts")
+BASE_LITNOTE_KEY = os.getenv("BASE_LITNOTE_KEY", "/literature")
 BASE_TOPICS_KEY = os.getenv("BASE_TOPICS_KEY")
 BASE_VIDEO_KEY = os.getenv("BASE_VIDEO_KEY")
 class ManageHDF5:
@@ -238,4 +241,31 @@ class ManageHDF5:
             df = self.get_dataframe("queue", base=BASE_VIDEO_KEY)
             return df["video_path"].values.tolist()
     
-    
+    def generate_each_batch(self, transcript_key:str, prompt_path:str, destination_base:str, batch_size=20):
+        """ Extracts the text from a batch and processes it with the promt_text against an llm
+        The results are stored in the hdf5 file at the desination_base.
+        """
+        print("Processing: ", transcript_key)
+        index = 0
+        
+
+        llm = LLMManager(prompt_path=prompt_path)
+        size = self.get_row_count(transcript_key)
+        #size = 100
+        list_topics = []
+        for i in range(0, size, batch_size):
+            ins = i
+            ine = i + batch_size
+            df = self.get_rows_between_indexes(ins, ine, transcript_key)
+            first_ts = df["start"].min()
+            last_ts = df["end"].max()
+            l_text = df["text"].tolist()
+            response = llm.generate(" ".join(l_text))
+            topic = response.content
+            
+            topic = topic.replace("<end_message>","")
+            topic = topic.strip()
+            print(topic)
+            list_topics.append({"start":first_ts, "end":last_ts,"topic":topic})
+        df_results = pd.DataFrame(list_topics) 
+        self.save_df_to_hd5(df_results, key=transcript_key, base=destination_base)

@@ -8,6 +8,15 @@ from yt_dlp_mp3 import download_audio, MP3_PATH
 import os
 import pandas as pd
 import os 
+from manage_llm import LITNOTES_PROMPT
+
+EXIT = "Exit🚪"
+LITERATURE = "Literature 📚"
+NOTES = "Notes 📝"
+LIT_NOTES = f"{LITERATURE} {NOTES}"
+TRANSCRIBE = "Transcribe 🖋️"
+KEYS = "Keys 🔑"
+VIDEOS = "Videos 📹"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
@@ -141,18 +150,43 @@ def transcribe_menu():
         if answer == "Exit":
             should_exit = True
             
-@click.command()
-def menu():
-    """Menu for managing the queue."""
-    options = ["Video Menu", "Transcribe Menu", "Exit"]
+def literature_note_menu():
+    """ Menu for creating Literature notes from transcripts"""
+    options = [f"{LIT_NOTES} {KEYS}",
+               f"Create {LIT_NOTES}",
+               EXIT]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
-        if answer == "Video Menu":
+        if answer == f"{LIT_NOTES} {KEYS}":
+            manager = ManageHDF5()
+            keys = manager.get_keys(under="/literature_notes")
+            for key in keys:
+                print(key)
+
+        if answer == f"Create {LIT_NOTES}":
+            manager = ManageHDF5()
+            # Choose one or more transcriptions to process
+            transcripts = manager.get_keys(under="/transcripts")
+            selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
+            for key in selected_keys:
+                manager.generate_each_batch(key, LITNOTES_PROMPT,"/literature_notes" )
+
+
+@click.command()
+def menu():
+    """Menu for managing the queue."""
+    options = [VIDEOS, TRANSCRIBE ,LIT_NOTES, EXIT]
+    should_exit = False
+    while not should_exit:
+        answer = questionary.select("What would you like to do?", choices=options).ask()
+        if answer == VIDEOS:
             video_menu()
-        if answer == "Transcribe Menu":
+        if answer == TRANSCRIBE:
             transcribe_menu()
-        if answer == "Exit":
+        if answer == LIT_NOTES:
+            literature_note_menu()
+        if answer == EXIT:
             should_exit = True
            
 
