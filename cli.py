@@ -183,9 +183,11 @@ def literature_note_menu():
             if len(transcripts) == 0:
                 print("No transcripts to process")
                 continue
+            # ask the user how many lines in each batch
+            batch_size = questionary.text("How many lines in each batch?", default="10").ask()
             selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
             for key in selected_keys:
-                manager.generate_each_batch(key, LITNOTES_PROMPT,"/literature_notes" )
+                manager.generate_each_batch(key, LITNOTES_PROMPT,"/literature_notes", batch_size=int(batch_size)  )
         if answer == SAVE_FILE:
             manager = ManageHDF5()
             # choose the /transcripts key to save
