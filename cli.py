@@ -9,6 +9,9 @@ import os
 import pandas as pd
 import os 
 from manage_llm import LITNOTES_PROMPT
+import math
+from urllib.parse import urlparse
+from urllib.parse import parse_qs
 
 EXIT = "Exit🚪"
 LITERATURE = "Literature 📚"
@@ -16,11 +19,11 @@ NOTES = "Notes 📝"
 LIT_NOTES = f"{LITERATURE} {NOTES}"
 TRANSCRIBE = "Transcribe 🖋️"
 KEYS = "Keys 🔑"
+SAVE_FILE = "Save 💾"
 VIDEOS = "Videos 📹"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
-
 
 def create_df_table(title:str="dataframe", df:pd.DataFrame=pd.DataFrame.empty):
     # print a dataframe in a table
@@ -35,7 +38,6 @@ def create_df_table(title:str="dataframe", df:pd.DataFrame=pd.DataFrame.empty):
             s_row.append(str(getattr(r, c)))
         table.add_row(*s_row, style="cyan")
     return table
-
 
 def show_state(columns:list[str]=None, state_filter:str=None):
     """Show the current state of the queue."""
@@ -149,11 +151,21 @@ def transcribe_menu():
         
         if answer == "Exit":
             should_exit = True
-            
+def convert_url(url, start):
+    """
+    Convert the youtube video url one that has a start time
+    from : https://www.youtube.com/watch?v=-oOhJWesKm0&t=15
+    to: https://youtu.be/-oOhJWesKm0?t=789
+    """
+    parsed_url = urlparse(url)
+    video_id = parse_qs(parsed_url.query)['v'][0]
+    return f"https://youtu.be/{video_id}?t={start}"
+              
 def literature_note_menu():
     """ Menu for creating Literature notes from transcripts"""
     options = [f"{LIT_NOTES} {KEYS}",
                f"Create {LIT_NOTES}",
+               SAVE_FILE,
                EXIT]
     should_exit = False
     while not should_exit:
@@ -168,9 +180,39 @@ def literature_note_menu():
             manager = ManageHDF5()
             # Choose one or more transcriptions to process
             transcripts = manager.get_keys(under="/transcripts")
+            if len(transcripts) == 0:
+                print("No transcripts to process")
+                continue
             selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
             for key in selected_keys:
                 manager.generate_each_batch(key, LITNOTES_PROMPT,"/literature_notes" )
+        if answer == SAVE_FILE:
+            manager = ManageHDF5()
+            # choose the /transcripts key to save
+            transcripts = manager.get_keys(under="/transcripts")
+            key = questionary.select("Which transcript would you like to save?", choices=transcripts).ask()
+            # choose the file name to save to
+            file_name = questionary.text("What should the file name be?", default=f"data/lit_{key}.md").ask()
+            lines = []
+            df = manager.get_dataframe( key, "/literature_notes")
+            # lookup the /status df
+            status_df = manager.get_dataframe("queue", BASE_VIDEO_KEY)
+            # find the current video record
+            status_row = status_df[status_df["key_name"]==key]
+            # get the video url
+            video_url = status_row["video_path"].values[0]
+            for r in df.itertuples():
+                # split the topic into lines
+                parts = r.topic.split("\n")
+                # get the time start for this topic
+                time_start = int(round(r.start/1000,0))
+                url = convert_url(video_url, time_start)
+                parts.insert(1,f"[Source Clip]({url})")
+                lines.extend(parts)
+            with open(file_name, 'w') as f:
+                f.write("\n".join(lines))
+        if answer == EXIT:
+            should_exit = True
 
 
 @click.command()

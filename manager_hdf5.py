@@ -241,7 +241,7 @@ class ManageHDF5:
             df = self.get_dataframe("queue", base=BASE_VIDEO_KEY)
             return df["video_path"].values.tolist()
     
-    def generate_each_batch(self, transcript_key:str, prompt_path:str, destination_base:str, batch_size=20):
+    def generate_each_batch(self, transcript_key:str, prompt_path:str, destination_base:str, batch_size=15):
         """ Extracts the text from a batch and processes it with the promt_text against an llm
         The results are stored in the hdf5 file at the desination_base.
         """
@@ -267,5 +267,6 @@ class ManageHDF5:
             topic = topic.strip()
             print(topic)
             list_topics.append({"start":first_ts, "end":last_ts,"topic":topic})
+        print("Perparing to save DF...")
         df_results = pd.DataFrame(list_topics) 
         self.save_df_to_hd5(df_results, key=transcript_key, base=destination_base)
