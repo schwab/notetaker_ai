@@ -8,7 +8,7 @@ from yt_dlp_mp3 import download_audio, MP3_PATH
 import os
 import pandas as pd
 import os 
-from manage_llm import LITNOTES_PROMPT
+from manage_llm import LITNOTES_PROMPT, PERMANENT_NOTE_NAMES_PROMPT
 import math
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
@@ -18,9 +18,14 @@ LITERATURE = "Literature 📚"
 NOTES = "Notes 📝"
 LIT_NOTES = f"{LITERATURE} {NOTES}"
 TRANSCRIBE = "Transcribe 🖋️"
+DISPLAY = "Display 📺"
 KEYS = "Keys 🔑"
 SAVE_FILE = "Save 💾"
+UPLOAD = "Upload 📤"
 VIDEOS = "Videos 📹"
+GENERATE = "Generate 🧠"
+PERMANANT_NOTE = "Permanant Note 📝"
+NAMES = "Names 📛"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
@@ -151,6 +156,7 @@ def transcribe_menu():
         
         if answer == "Exit":
             should_exit = True
+
 def convert_url(url, start):
     """
     Convert the youtube video url one that has a start time
@@ -165,9 +171,15 @@ def literature_note_menu():
     """ Menu for creating Literature notes from transcripts"""
     options = [f"{LIT_NOTES} {KEYS}",
                f"Create {LIT_NOTES}",
+               DISPLAY + " " + LIT_NOTES,
+               UPLOAD + " " + LIT_NOTES,
                SAVE_FILE,
+               f"{GENERATE} {PERMANANT_NOTE} {NAMES}",
+               f"{GENERATE} {PERMANANT_NOTE}",
                EXIT]
     should_exit = False
+    p_note_names = []
+    lit_note_key = None
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == f"{LIT_NOTES} {KEYS}":
@@ -188,6 +200,30 @@ def literature_note_menu():
             selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
             for key in selected_keys:
                 manager.generate_each_batch(key, LITNOTES_PROMPT,"/literature_notes", batch_size=int(batch_size)  )
+        if answer == DISPLAY + " " + LIT_NOTES:
+            manager = ManageHDF5()
+            # choose the literature notes to display
+            keys = manager.get_keys(under="/literature_notes")
+            key = questionary.select("Which literature notes would you like to display?", choices=keys).ask()
+            df = manager.get_dataframe(key, "/literature_notes")
+            t = create_df_table("Literature Notes", df)
+            console = Console()
+            console.print(t)
+        if answer == UPLOAD + " " + LIT_NOTES:
+            manager = ManageHDF5()
+            # chooose the md file to upload
+            file_name = questionary.text("What is the file name?", default="data/lit_notes.md").ask() 
+            # Load the file contents 
+            with open(file_name, 'r') as f:
+                lines = f.readlines()
+            # Convert the lines to a dataframe
+            df = pd.DataFrame(lines, columns=["text"])
+            df["start"] = None
+            df["end"] = None
+            # file name without the extension
+            key = os.path.basename(file_name).replace(".md","")
+            # save to hd5
+            manager.save_df_to_hd5(df, key=key, base="/literature_notes")
         if answer == SAVE_FILE:
             manager = ManageHDF5()
             # choose the /transcripts key to save
@@ -213,6 +249,34 @@ def literature_note_menu():
                 lines.extend(parts)
             with open(file_name, 'w') as f:
                 f.write("\n".join(lines))
+        if answer == f"{GENERATE} {PERMANANT_NOTE} {NAMES}":
+            # Choose the literature notes to process
+            manager = ManageHDF5()
+            p_note_names = []
+            keys = manager.get_keys(under="/literature_notes")
+            key = questionary.select("Which literature notes would you like to process?", choices=keys).ask()
+            lit_note_key = key
+            # call the generate function
+            results = manager.generate_permanent_note_names(key, prompt_path=PERMANENT_NOTE_NAMES_PROMPT)
+            lines = results.split("\n")
+            if ":" in lines[0]:
+                lines = lines[1:]
+            # remove 1. 2. etc from front of lines
+            if all(["." in l for l in lines]):
+                lines = [l.split(".")[1] for l in lines]
+            lines = [l for l in lines if len(l) > 0 ]
+            p_note_names.extend(lines)
+            for l in lines:
+                print(l)
+        if answer   == f"{GENERATE} {PERMANANT_NOTE}":
+            manager= ManageHDF5()
+            if not lit_note_key is None:
+                # choose the permanent note name
+                p_note_name = questionary.select("Which permanent note name would you like to process?", choices=p_note_names).ask()
+                result = manager.generate_permanent_note(lit_note_key, p_note_name)
+                print(result)
+            
+            
         if answer == EXIT:
             should_exit = True
 

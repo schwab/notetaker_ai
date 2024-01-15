@@ -8,7 +8,7 @@ from manage_llm import LLMManager
 load_dotenv()
 HDF5_PATH = os.getenv("HDF5_PATH")
 BASE_TRANSCRIPTS_KEY = os.getenv("BASE_TRANSCRIPTS_KEY", "/transcripts")
-BASE_LITNOTE_KEY = os.getenv("BASE_LITNOTE_KEY", "/literature")
+BASE_LITNOTE_KEY = os.getenv("BASE_LITNOTE_KEY", "/literature_notes")
 BASE_TOPICS_KEY = os.getenv("BASE_TOPICS_KEY")
 BASE_VIDEO_KEY = os.getenv("BASE_VIDEO_KEY")
 class ManageHDF5:
@@ -19,7 +19,7 @@ class ManageHDF5:
         return os.path.isfile(self.file_name)
     
     def file_name_to_key(self, file_name:str):
-        return file_name.replace('.tsv', '').replace('.csv', '').replace(" ","_").replace(":","_").lower()
+        return file_name.replace('.tsv', '').replace('.csv', '').replace(":","_").replace("-","").replace(" ","_").lower()
     
     def save_df_to_hd5(self, df:pd.DataFrame, key:str, filename=HDF5_PATH, base=BASE_TRANSCRIPTS_KEY, append=True ):
         """Save pandas dataframe to hdf5 file.
@@ -30,7 +30,9 @@ class ManageHDF5:
         """
         
         key = os.path.join(base, key)
-        df.to_hdf(filename, key=key, format='table', append=append)
+        with pd.HDFStore(filename) as store:
+            store.put(key, df, format='table', append=append)
+            
         print(f"Saved df to hdf5 file at {key}")
          
     def save_to_hdf5(self, data:dict, key:str, filename=HDF5_PATH, base_key=BASE_TRANSCRIPTS_KEY ):
@@ -270,3 +272,40 @@ class ManageHDF5:
         print("Perparing to save DF...")
         df_results = pd.DataFrame(list_topics) 
         self.save_df_to_hd5(df_results, key=transcript_key, base=destination_base)
+    
+    def generate_permanent_note_names(self, litnote_key, prompt_path:str="prompts/permanent_note_names.txt"):
+        """Load the lines from the litnote_key and generate a permanent note 
+        by calling the llm with a prompt.
+
+        Args:
+            litnote_key (_type_): _description_
+            prompt_path (str, optional): _description_. Defaults to "prompts/permanent_note_names.txt".
+        """
+        # load the literature notes
+        df = self.get_dataframe(litnote_key, base=BASE_LITNOTE_KEY)
+        df = df[(df['text'] != '\n') & (df['text'] != '- \n' )]
+        lines = df["text"].values.tolist()
+        
+        llm = LLMManager(prompt_path=prompt_path)
+        result  = llm.generate(text= "\n".join(lines))
+        return result.content.replace("<end_message>","").replace("< end message>", "").strip()
+    
+    def generate_permanent_note(self, litnote_key, permanent_note_name, prompt_path:str="prompts/permanent_note.txt"):
+        """Generate a permanent note by calling the llm with a prompt.
+
+        Args:
+            permanent_note_name (_type_): _description_
+            prompt_path (str, optional): _description_. Defaults to "prompts/permanent_note.txt".
+        """
+        
+        # load the literature notes
+        df = self.get_dataframe(litnote_key, base=BASE_LITNOTE_KEY)
+        df = df[(df['text'] != '\n') & (df['text'] != '- \n' )]
+        lines = df["text"].values.tolist()
+        lit_text = "\n".join(lines)
+        
+        llm = LLMManager(prompt_path=prompt_path)
+        result  = llm.generate(d_props={"p_note_name":permanent_note_name, 
+                                "text": lit_text})
+        return result.content.replace("<end_message>","").replace("< end message>", "").strip()
+        

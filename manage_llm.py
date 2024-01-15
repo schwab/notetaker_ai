@@ -7,6 +7,8 @@ LITNOTES_PROMPT = os.getenv("LITNOTES_PROMPT", "prompts/lit_notes.txt")
 OLLAMA_URL = os.getenv("OLLAMA_BASEURL")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 
+PERMANENT_NOTE_NAMES_PROMPT = os.getenv("PERMANANT_NOTE_NAMES_PROMPT", "prompts/permanent_note_names.txt")  
+
 class LLMManager():
     def __init__(self, prompt_path=None) -> None:
         self.prompt_text = None
@@ -20,7 +22,10 @@ class LLMManager():
         self.model = ChatOllama(base_url=OLLAMA_URL, model=OLLAMA_MODEL)
         self.chain = self.prompt | self.model
         
-    def generate(self, text:str):
-        return self.chain.invoke({"text":text})
+    def generate(self, text:str=None, d_props:dict=None):
+        if not d_props is None:
+            return self.chain.invoke(d_props)
+        elif not text is None:
+            return self.chain.invoke({"text":text})
     
     
