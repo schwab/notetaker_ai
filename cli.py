@@ -12,6 +12,7 @@ from manage_llm import LITNOTES_PROMPT, PERMANENT_NOTE_NAMES_PROMPT
 import math
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
+from requests.models import PreparedRequest
 
 EXIT = "Exit🚪"
 LITERATURE = "Literature 📚"
@@ -22,10 +23,14 @@ DISPLAY = "Display 📺"
 KEYS = "Keys 🔑"
 SAVE_FILE = "Save 💾"
 UPLOAD = "Upload 📤"
-VIDEOS = "Videos 📹"
+VIDEO = "Video 📹"
+ADD = "Add ➕"
+DOWNLOAD = "Download 📥"
+QUEUE = "Queue 📬"
 GENERATE = "Generate 🧠"
 PERMANANT_NOTE = "Permanant Note 📝"
 NAMES = "Names 📛"
+DELETE = "Delete 🗑️"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
@@ -67,19 +72,19 @@ def show_state(columns:list[str]=None, state_filter:str=None):
     
 def video_menu():
     """Menu for managing videos."""
-    options = ["Show Video Queue", 
-               "Add Video",
-               "Download Video",
+    options = [DISPLAY + " " + VIDEO + QUEUE,
+               ADD + " " + VIDEO,
+               DOWNLOAD + " " + VIDEO,
                "Download All Pending Videos",
                "Remove Video", 
-               "Delete Video Queue", 
-               "Exit"]
+               DELETE + " " + VIDEO + QUEUE, 
+               EXIT]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
-        if answer == "Show Video Queue":
+        if answer == DISPLAY + " " + VIDEO + QUEUE:
             show_state()
-        if answer == "Add Video":
+        if answer == ADD + " " + VIDEO :
             path = questionary.text("Enter the path to the video").ask()
             manager = ManageHDF5()
             manager.add_video_to_process(path)
@@ -92,12 +97,12 @@ def video_menu():
             path = questionary.select("Which video would you like to remove?", choices=videos).ask()
             
             manager.remove_video_to_process(path)
-        if answer == "Download Video":
+        if answer == DOWNLOAD + " " + VIDEO:
             manager = ManageHDF5()
             videos = manager.get_unprocessed_videos_in_queue()
             path = questionary.select("Which video would you like to download?", choices=videos).ask()
             info_dict = download_audio(path)
-            mp3_file = os.path.join(MP3_PATH, info_dict["title"] + ".mp3")
+            #mp3_file = os.path.join(MP3_PATH, info_dict["title"] + ".mp3")
             d_props = {"status":"mp3_downloaded", 
                        "mp3_file":info_dict["mp3_file"], 
                        "thumbnail_url":info_dict["thumbnail"],
@@ -109,10 +114,10 @@ def video_menu():
                        }  
             manager.set_video_properties(path, d_props)
             
-        if answer == "Delete Video Queue":
+        if answer == DELETE + " " + VIDEO + QUEUE:
             manager = ManageHDF5()
             manager.delete_queue()
-        if answer == "Exit":
+        if answer == EXIT:
             should_exit = True
 
 def transcribe_menu():
@@ -164,13 +169,20 @@ def convert_url(url, start):
     to: https://youtu.be/-oOhJWesKm0?t=789
     """
     parsed_url = urlparse(url)
-    video_id = parse_qs(parsed_url.query)['v'][0]
-    return f"https://youtu.be/{video_id}?t={start}"
+    req = PreparedRequest()
+    params = {"t":start}
+    req.prepare_url(url, params)
+    if not "youtu.be" in parsed_url.netloc:
+        video_id = parse_qs(parsed_url.query)['v'][0]
+        return f"https://youtu.be/{video_id}?t={start}"
+    else:
+        return req.url
               
 def literature_note_menu():
     """ Menu for creating Literature notes from transcripts"""
     options = [f"{LIT_NOTES} {KEYS}",
                f"Create {LIT_NOTES}",
+               DELETE + " " + LIT_NOTES,
                DISPLAY + " " + LIT_NOTES,
                UPLOAD + " " + LIT_NOTES,
                SAVE_FILE,
@@ -200,6 +212,7 @@ def literature_note_menu():
             selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
             for key in selected_keys:
                 manager.generate_each_batch(key, LITNOTES_PROMPT,"/literature_notes", batch_size=int(batch_size)  )
+        
         if answer == DISPLAY + " " + LIT_NOTES:
             manager = ManageHDF5()
             # choose the literature notes to display
@@ -209,6 +222,7 @@ def literature_note_menu():
             t = create_df_table("Literature Notes", df)
             console = Console()
             console.print(t)
+        
         if answer == UPLOAD + " " + LIT_NOTES:
             manager = ManageHDF5()
             # chooose the md file to upload
@@ -224,6 +238,7 @@ def literature_note_menu():
             key = os.path.basename(file_name).replace(".md","")
             # save to hd5
             manager.save_df_to_hd5(df, key=key, base="/literature_notes")
+        
         if answer == SAVE_FILE:
             manager = ManageHDF5()
             # choose the /transcripts key to save
@@ -241,7 +256,7 @@ def literature_note_menu():
             video_url = status_row["video_path"].values[0]
             for r in df.itertuples():
                 # split the topic into lines
-                parts = r.topic.split("\n")
+                parts = r.text.split("\n")
                 # get the time start for this topic
                 time_start = int(round(r.start/1000,0))
                 url = convert_url(video_url, time_start)
@@ -249,6 +264,7 @@ def literature_note_menu():
                 lines.extend(parts)
             with open(file_name, 'w') as f:
                 f.write("\n".join(lines))
+        
         if answer == f"{GENERATE} {PERMANANT_NOTE} {NAMES}":
             # Choose the literature notes to process
             manager = ManageHDF5()
@@ -268,6 +284,7 @@ def literature_note_menu():
             p_note_names.extend(lines)
             for l in lines:
                 print(l)
+        
         if answer   == f"{GENERATE} {PERMANANT_NOTE}":
             manager= ManageHDF5()
             if not lit_note_key is None:
@@ -275,7 +292,13 @@ def literature_note_menu():
                 p_note_name = questionary.select("Which permanent note name would you like to process?", choices=p_note_names).ask()
                 result = manager.generate_permanent_note(lit_note_key, p_note_name)
                 print(result)
-            
+          
+        if answer == DELETE + " " + LIT_NOTES:
+            manager = ManageHDF5()
+            # choose the literature notes to delete
+            keys = manager.get_keys(under="/literature_notes")
+            key = questionary.select("Which literature notes would you like to delete?", choices=keys).ask()
+            manager.delete_by_key(key, "/literature_notes")  
             
         if answer == EXIT:
             should_exit = True
@@ -284,11 +307,11 @@ def literature_note_menu():
 @click.command()
 def menu():
     """Menu for managing the queue."""
-    options = [VIDEOS, TRANSCRIBE ,LIT_NOTES, EXIT]
+    options = [VIDEO, TRANSCRIBE ,LIT_NOTES, EXIT]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
-        if answer == VIDEOS:
+        if answer == VIDEO:
             video_menu()
         if answer == TRANSCRIBE:
             transcribe_menu()

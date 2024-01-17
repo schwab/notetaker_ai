@@ -26,6 +26,8 @@ class LLMManager():
         if not d_props is None:
             return self.chain.invoke(d_props)
         elif not text is None:
-            return self.chain.invoke({"text":text})
+            #d_props = {"text":text.replace("'","\\'")}
+            d_props = {"text":text}
+            return self.chain.invoke(d_props)
     
     

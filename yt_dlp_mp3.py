@@ -6,8 +6,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MP3_PATH = os.getenv("MP3_PATH")
+ELIMINATE_KEY_CHARS = os.getenv("ELIMINATE_KEY_CHARS", [".","…",  "!", ":", "-",",","|","/","\\","(",")","[","]","{","}","'"])
+
 def create_key(title):
-    return title.replace(" ","_").replace(":","_").replace("__","_").lower()
+    for c in ELIMINATE_KEY_CHARS:
+        title = title.replace(c,"_")
+    return title.replace(" ","_").replace("__","_").replace("__","_").lower()[:85]
 
 def download_audio(link):
   random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))

@@ -11,6 +11,18 @@ BASE_TRANSCRIPTS_KEY = os.getenv("BASE_TRANSCRIPTS_KEY", "/transcripts")
 BASE_LITNOTE_KEY = os.getenv("BASE_LITNOTE_KEY", "/literature_notes")
 BASE_TOPICS_KEY = os.getenv("BASE_TOPICS_KEY")
 BASE_VIDEO_KEY = os.getenv("BASE_VIDEO_KEY")
+ELIMINATE_KEY_CHARS = os.getenv("ELIMINATE_KEY_CHARS", [".", ":", "-", ",","|","/","\\","(",")","[","]","{","}","'"])
+
+VIDEO_COLUMN_LEN = {"video_path": 100, 
+                        "status":20,
+                        "key_name":100,
+                        "mp3_file":100,
+                        "thumbnail_url":100,
+                        "description":300, 
+                        "channel_url":100, 
+                        "channel":70,
+                        "duration":20                        ,
+                        }
 class ManageHDF5:
     def __init__(self) -> None:
         self.file_name = HDF5_PATH
@@ -19,9 +31,12 @@ class ManageHDF5:
         return os.path.isfile(self.file_name)
     
     def file_name_to_key(self, file_name:str):
-        return file_name.replace('.tsv', '').replace('.csv', '').replace(":","_").replace("-","").replace(" ","_").lower()
+        eliminate_chars = [".tsv", ".csv"] + ELIMINATE_KEY_CHARS    
+        for c in eliminate_chars:
+            file_name = file_name.replace(c,"_")
+        return file_name.replace(" ","_").replace("__","_").lower()[:100]
     
-    def save_df_to_hd5(self, df:pd.DataFrame, key:str, filename=HDF5_PATH, base=BASE_TRANSCRIPTS_KEY, append=True ):
+    def save_df_to_hd5(self, df:pd.DataFrame, key:str, filename=HDF5_PATH, base=BASE_TRANSCRIPTS_KEY, append=True, min_itemsize:dict=None ):
         """Save pandas dataframe to hdf5 file.
         Args:
             df (pd.DataFrame): dataframe to save
@@ -30,8 +45,13 @@ class ManageHDF5:
         """
         
         key = os.path.join(base, key)
-        with pd.HDFStore(filename) as store:
-            store.put(key, df, format='table', append=append)
+        if self.key_exists(key):
+            with pd.HDFStore(filename) as store:
+                store.append(key, df, format="table", min_itemsize=min_itemsize, index=False)
+        else:
+            with pd.HDFStore(filename) as store:
+                store.put(key, df, format='table', append=append, min_itemsize=min_itemsize, index=False )
+            
             
         print(f"Saved df to hdf5 file at {key}")
          
@@ -69,6 +89,17 @@ class ManageHDF5:
             full_key_path = os.path.join(base, key)
             return full_key_path in f
         
+    def delete_by_key(self, key, base=BASE_TRANSCRIPTS_KEY):
+        """Delete key from hdf5 file.
+
+        Args:
+            key (str): key to delete
+            base (str): base key to delete under
+        """
+        with h5py.File(self.file_name, 'a') as f:
+            full_key_path = os.path.join(base, key)
+            del f[full_key_path]
+            
     def get_dataframes(self, name, obj):
         if self._filter in name:
             if name.count("/") == 1:
@@ -178,14 +209,15 @@ class ManageHDF5:
                                    "thumbnail_url","description",
                                    "channel_url","channel",
                                    "duration"])  
+       
         if not self.key_exists(BASE_VIDEO_KEY):
-            self.save_df_to_hd5(df, "queue", filename=self.file_name, base=BASE_VIDEO_KEY)
+            self.save_df_to_hd5(df, "queue", filename=self.file_name, base=BASE_VIDEO_KEY, min_itemsize=VIDEO_COLUMN_LEN)
         else:
                       
             # get the current list of videos
             df_current = self.get_dataframe("queue",BASE_VIDEO_KEY)
             if df_current.empty:
-                self.save_df_to_hd5(df, "queue", filename=self.file_name, base=BASE_VIDEO_KEY)
+                self.save_df_to_hd5(df, "queue", filename=self.file_name, base=BASE_VIDEO_KEY, min_itemsize=VIDEO_COLUMN_LEN)
                 return
             # skip if the video is already in the list
             if video_path in df_current["video_path"].values:
@@ -194,7 +226,7 @@ class ManageHDF5:
             # append the new video
             #df_current = pd.concat([df_current, df], axis=0)
             # save the list of videos
-            self.save_df_to_hd5(df,"queue",filename=self.file_name, base=BASE_VIDEO_KEY, append=True)
+            self.save_df_to_hd5(df,"queue",filename=self.file_name, base=BASE_VIDEO_KEY, append=True, min_itemsize=VIDEO_COLUMN_LEN)
    
     def set_video_properties(self, video_path:str, l_key_values:dict):
         """Set a property on the video row specified by video_path
@@ -208,8 +240,9 @@ class ManageHDF5:
         with pd.HDFStore(HDF5_PATH) as store:
             df = store.get(os.path.join(BASE_VIDEO_KEY, "queue"))
             for k, v in l_key_values.items():
-                df.loc[df["video_path"]==video_path, k] = v
-            store.put(os.path.join(BASE_VIDEO_KEY, "queue"), df)
+                lenc = VIDEO_COLUMN_LEN[k]
+                df.loc[df["video_path"]==video_path, k] = v[:lenc]
+            store.put(os.path.join(BASE_VIDEO_KEY, "queue"), df, format='table', append=False)
             
         
     def remove_video_to_process(self, video_path:str):
@@ -268,7 +301,12 @@ class ManageHDF5:
             topic = topic.replace("<end_message>","")
             topic = topic.strip()
             print(topic)
-            list_topics.append({"start":first_ts, "end":last_ts,"topic":topic})
+            parts = topic.split("\n")
+            # remove first lines like "Topic: ", "Possible Notes:" etc
+            if len(parts) > 1:
+                if ":" in parts[0]:
+                    topic = "\n".join(parts[1:])    
+            list_topics.append({"start":first_ts, "end":last_ts,"text":topic})
         print("Perparing to save DF...")
         df_results = pd.DataFrame(list_topics) 
         self.save_df_to_hd5(df_results, key=transcript_key, base=destination_base)
