@@ -3,6 +3,7 @@ import questionary
 from rich.table import Table
 from rich.console import Console
 from manager_hdf5 import ManageHDF5, BASE_VIDEO_KEY
+from prompt_manager import PROMPT_TYPES, PromptManager
 from transcribe_provider import transcribe
 from yt_dlp_mp3 import download_audio, MP3_PATH
 import os
@@ -13,6 +14,8 @@ import math
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
 from requests.models import PreparedRequest
+
+from rich.markdown import Markdown
 
 EXIT = "Exit🚪"
 LITERATURE = "Literature 📚"
@@ -31,6 +34,9 @@ GENERATE = "Generate 🧠"
 PERMANANT_NOTE = "Permanant Note 📝"
 NAMES = "Names 📛"
 DELETE = "Delete 🗑️"
+PROMPT = "Prompt"
+MENU = "Menu 📝"
+TYPE = "Type"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
@@ -210,8 +216,10 @@ def literature_note_menu():
             # ask the user how many lines in each batch
             batch_size = questionary.text("How many lines in each batch?", default="10").ask()
             selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
+            literature_prompts = PromptManager().prompts_by_type("literature_note")
+            prompt_key = questionary.select("Which prompt should be used?", choices=literature_prompts).ask()
             for key in selected_keys:
-                manager.generate_each_batch(key, LITNOTES_PROMPT,"/literature_notes", batch_size=int(batch_size)  )
+                manager.generate_each_batch(transcript_key=key, prompt_key=prompt_key, destination_base="/literature_notes", batch_size=int(batch_size) )
         
         if answer == DISPLAY + " " + LIT_NOTES:
             manager = ManageHDF5()
@@ -272,8 +280,11 @@ def literature_note_menu():
             keys = manager.get_keys(under="/literature_notes")
             key = questionary.select("Which literature notes would you like to process?", choices=keys).ask()
             lit_note_key = key
+            # select prompt to use
+            permanent_notes_prompts = PromptManager().prompts_by_type("permanent_note")
+            prompt_key = questionary.select("Which prompt should be used?", choices=permanent_notes_prompts).ask()
             # call the generate function
-            results = manager.generate_permanent_note_names(key, prompt_path=PERMANENT_NOTE_NAMES_PROMPT)
+            results = manager.generate_permanent_note_names(key, prompt_key=prompt_key)
             lines = results.split("\n")
             if ":" in lines[0]:
                 lines = lines[1:]
@@ -290,7 +301,10 @@ def literature_note_menu():
             if not lit_note_key is None:
                 # choose the permanent note name
                 p_note_name = questionary.select("Which permanent note name would you like to process?", choices=p_note_names).ask()
-                result = manager.generate_permanent_note(lit_note_key, p_note_name)
+                # select prompt to use
+                permanent_notes_prompts = PromptManager().prompts_by_type("permanent_note")
+                prompt_key = questionary.select("Which prompt should be used?", choices=permanent_notes_prompts).ask()
+                result = manager.generate_permanent_note(lit_note_key=lit_note_key, permanent_note_name=p_note_name, prompt_key=prompt_key)
                 print(result)
           
         if answer == DELETE + " " + LIT_NOTES:
@@ -302,12 +316,75 @@ def literature_note_menu():
             
         if answer == EXIT:
             should_exit = True
+def prompt_menu():
+    options = [PROMPT + " " + KEYS,
+               ADD + " " + PROMPT,
+               DISPLAY + " " + PROMPT,
+               DELETE + " " + PROMPT,
+               PROMPT + " " + TYPE,
+               SAVE_FILE,
+               EXIT]
+    should_exit = False
+    while not should_exit:
+        answer = questionary.select("What would you like to do?", choices=options).ask()
+        if answer == PROMPT + " " + KEYS:
+            pm = PromptManager()
+            prompts = pm.list_prompts()
+            for p in prompts:
+                print(p)
+        if answer == ADD + " " + PROMPT:
+            # Choose the text file to add
+            pm = PromptManager()
+            files = pm.list_of_prompt_files()
 
+            if files:
+                file_to_add = questionary.select("Which file should be added to /prompts?",choices=files).ask()
+                prompt_type = questionary.select("Which prompt type?", choices=PROMPT_TYPES).ask()
+                name = questionary.text("What should it be called (no spaces or symbols except _, text only)").ask()
+                # load the file's text
+                text_lines = []
+                with open(file_to_add, 'r') as fp:
+                    text_lines = fp.readlines()
+                pm.store_prompt(name, text_lines, append=False, prompt_type=prompt_type)
+            else:
+                print("No files found in data/prompts.")
+        if answer == DISPLAY + " " + PROMPT:
+            pm = PromptManager()
+            files = pm.list_prompts()
+            if files:
+                file_to_display = questionary.select("Which file should be displayed?", choices=files).ask()
+                prompt_md = pm.get_prompt(file_to_display)
+                prompt_md = [str(x,"UTF-8") for x in prompt_md]
+                md = Markdown("\n".join(prompt_md))
+                console=Console()
+                console.print(md)
+
+        if answer == PROMPT + " " + TYPE:
+            pm = PromptManager()
+            p_types = pm.prompts_by_type()
+            display_types = []
+            for k,v in p_types.items():
+                display_types.append(f"## {k}")
+                for t in v:
+                    display_types.append(f"- {t}")
+            md = Markdown("\n".join(display_types))
+            console = Console()
+            console.print(md)
+
+        if answer == DELETE + " " + PROMPT:
+            pm = PromptManager()
+            prompt_keys = pm.list_prompts()
+            prompt_key = questionary.select("Which prompt should be deleted?", choices=prompt_keys).ask()
+            if prompt_key:
+                pm.delete_prompt(prompt_key)
+
+        if answer == EXIT:
+            should_exit = True
 
 @click.command()
 def menu():
     """Menu for managing the queue."""
-    options = [VIDEO, TRANSCRIBE ,LIT_NOTES, EXIT]
+    options = [VIDEO, TRANSCRIBE ,PROMPT + " " + MENU, LIT_NOTES, EXIT]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
@@ -317,6 +394,8 @@ def menu():
             transcribe_menu()
         if answer == LIT_NOTES:
             literature_note_menu()
+        if answer == PROMPT + " " + MENU:
+            prompt_menu()
         if answer == EXIT:
             should_exit = True
            

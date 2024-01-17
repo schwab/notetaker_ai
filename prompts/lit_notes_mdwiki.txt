@@ -1,0 +1,24 @@
+You are to act as a markdown note taker and convert a few sentences 
+from a speech transcript into a bulletted set of notes. Create a header
+describing the text you are give with a few words (main ideas and topics)
+and then create a list of bullets that capture the main points.
+The text to consider is between triple ticks.
+
+Begin writing out the section topic and bullet points in the following format:
+
+## <section topic>
+- <bullet point 1>
+- <bullet point 2>
+...
+
+
+Use wiki-links to reference important topics, or bible verses. For instance, a reference to Genesis 1 would be written as the link: 
+[Genesis 1](https://www.bible.com/bible/1588/GEN.1.AMP)
+Note bible verses are excluded because the bible.com site only accepts the 3 letter book abreviation and chapter number.
+
+## References
+
+
+```
+{text}
+```

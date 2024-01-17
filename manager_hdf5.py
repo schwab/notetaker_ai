@@ -3,7 +3,7 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 from manage_llm import LLMManager
-
+from prompt_manager import PromptManager
 
 load_dotenv()
 HDF5_PATH = os.getenv("HDF5_PATH")
@@ -244,7 +244,6 @@ class ManageHDF5:
                 df.loc[df["video_path"]==video_path, k] = v[:lenc]
             store.put(os.path.join(BASE_VIDEO_KEY, "queue"), df, format='table', append=False)
             
-        
     def remove_video_to_process(self, video_path:str):
         """
         Remove a video from the list of videos to process.
@@ -276,15 +275,18 @@ class ManageHDF5:
             df = self.get_dataframe("queue", base=BASE_VIDEO_KEY)
             return df["video_path"].values.tolist()
     
-    def generate_each_batch(self, transcript_key:str, prompt_path:str, destination_base:str, batch_size=15):
+    def generate_each_batch(self, transcript_key:str, prompt_key:str, destination_base:str, batch_size=15):
         """ Extracts the text from a batch and processes it with the promt_text against an llm
         The results are stored in the hdf5 file at the desination_base.
         """
         print("Processing: ", transcript_key)
         index = 0
         
-
-        llm = LLMManager(prompt_path=prompt_path)
+        pm = PromptManager()
+        prompt_text = pm.get_prompt(prompt_key)
+        if not prompt_text:
+            raise ValueError(f"prompt_key {prompt_key} not found.")
+        llm = LLMManager(prompt_text=prompt_text)
         size = self.get_row_count(transcript_key)
         #size = 100
         list_topics = []
@@ -311,7 +313,7 @@ class ManageHDF5:
         df_results = pd.DataFrame(list_topics) 
         self.save_df_to_hd5(df_results, key=transcript_key, base=destination_base)
     
-    def generate_permanent_note_names(self, litnote_key, prompt_path:str="prompts/permanent_note_names.txt"):
+    def generate_permanent_note_names(self, litnote_key, prompt_key:str):
         """Load the lines from the litnote_key and generate a permanent note 
         by calling the llm with a prompt.
 
@@ -323,12 +325,15 @@ class ManageHDF5:
         df = self.get_dataframe(litnote_key, base=BASE_LITNOTE_KEY)
         df = df[(df['text'] != '\n') & (df['text'] != '- \n' )]
         lines = df["text"].values.tolist()
-        
-        llm = LLMManager(prompt_path=prompt_path)
+        # load the prompt_text
+        prompt_text = PromptManager().get_prompt(prompt_key)
+        if not prompt_text:
+            raise ValueError(f"prompt_key {prompt_key} is invalid")
+        llm = LLMManager(prompt_text=prompt_text)
         result  = llm.generate(text= "\n".join(lines))
         return result.content.replace("<end_message>","").replace("< end message>", "").strip()
     
-    def generate_permanent_note(self, litnote_key, permanent_note_name, prompt_path:str="prompts/permanent_note.txt"):
+    def generate_permanent_note(self, litnote_key, permanent_note_name, prompt_key:str):
         """Generate a permanent note by calling the llm with a prompt.
 
         Args:
@@ -341,8 +346,11 @@ class ManageHDF5:
         df = df[(df['text'] != '\n') & (df['text'] != '- \n' )]
         lines = df["text"].values.tolist()
         lit_text = "\n".join(lines)
-        
-        llm = LLMManager(prompt_path=prompt_path)
+        # load the prompt_text
+        prompt_text = PromptManager().get_prompt(prompt_key)
+        if not prompt_text:
+            raise ValueError(f"prompt_key {prompt_key} is invalid.")
+        llm = LLMManager(prompt_text=prompt_text)
         result  = llm.generate(d_props={"p_note_name":permanent_note_name, 
                                 "text": lit_text})
         return result.content.replace("<end_message>","").replace("< end message>", "").strip()
