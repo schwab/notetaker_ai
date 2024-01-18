@@ -6,6 +6,7 @@ from manage_llm import LLMManager
 from prompt_manager import PromptManager
 
 load_dotenv()
+
 HDF5_PATH = os.getenv("HDF5_PATH")
 BASE_TRANSCRIPTS_KEY = os.getenv("BASE_TRANSCRIPTS_KEY", "/transcripts")
 BASE_LITNOTE_KEY = os.getenv("BASE_LITNOTE_KEY", "/literature_notes")
