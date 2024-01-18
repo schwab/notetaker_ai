@@ -13,7 +13,7 @@ class LLMManager():
     def __init__(self, prompt_text:str) -> None:
         
     
-        self.prompt = ChatPromptTemplate.from_template(self.prompt_text)
+        self.prompt = ChatPromptTemplate.from_template(prompt_text)
     
         self.model = ChatOllama(base_url=OLLAMA_URL, model=OLLAMA_MODEL)
         self.chain = self.prompt | self.model

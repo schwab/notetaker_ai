@@ -298,14 +298,23 @@ def literature_note_menu():
         
         if answer   == f"{GENERATE} {PERMANANT_NOTE}":
             manager= ManageHDF5()
-            if not lit_note_key is None:
-                # choose the permanent note name
-                p_note_name = questionary.select("Which permanent note name would you like to process?", choices=p_note_names).ask()
-                # select prompt to use
-                permanent_notes_prompts = PromptManager().prompts_by_type("permanent_note")
-                prompt_key = questionary.select("Which prompt should be used?", choices=permanent_notes_prompts).ask()
-                result = manager.generate_permanent_note(lit_note_key=lit_note_key, permanent_note_name=p_note_name, prompt_key=prompt_key)
-                print(result)
+            # choose the literature note name:
+            keys = manager.get_keys(under="/literature_notes")
+            lit_note_key = questionary.select("Which literature notes would you like to process?", choices=keys).ask()
+            # choose the permanent note name
+            p_note_name = questionary.text("Enter a Note Name...").ask()
+            # select prompt to use
+            permanent_notes_prompts = PromptManager().prompts_by_type("permanent_note")
+            prompt_key = questionary.select("Which prompt should be used?", choices=permanent_notes_prompts).ask()
+            result = manager.generate_permanent_note(litnote_key=lit_note_key, permanent_note_name=p_note_name, prompt_key=prompt_key)
+            md = Markdown(result)
+            console = Console()
+            console.print(md)
+            store_yn = questionary.confirm("Store this permanent note?").ask()
+            if store_yn:
+                p_note_name = questionary.text("Enter a note name to store...").ask()
+                print("not implemented yet.")
+            #print(result)
           
         if answer == DELETE + " " + LIT_NOTES:
             manager = ManageHDF5()
@@ -316,6 +325,7 @@ def literature_note_menu():
             
         if answer == EXIT:
             should_exit = True
+
 def prompt_menu():
     options = [PROMPT + " " + KEYS,
                ADD + " " + PROMPT,
@@ -354,7 +364,6 @@ def prompt_menu():
             if files:
                 file_to_display = questionary.select("Which file should be displayed?", choices=files).ask()
                 prompt_md = pm.get_prompt(file_to_display)
-                prompt_md = [str(x,"UTF-8") for x in prompt_md]
                 md = Markdown("\n".join(prompt_md))
                 console=Console()
                 console.print(md)

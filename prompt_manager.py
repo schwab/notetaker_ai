@@ -1,13 +1,15 @@
 import h5py
 from dotenv import load_dotenv
 import os
+
+from document_manager import DocumentManager, HDF5_PATH
 load_dotenv()
-HDF5_PATH = os.getenv("HDF5_PATH", "data/processed/transcripts.h5")
+
 BASE_PROMPTS_KEY = os.getenv("BASE_PROMPTS_KEY", "/prompts")
 TEXT_DIR = "prompts"
 PROMPT_TYPES = ["literatue_note","permanent_note"]
 
-class PromptManager():
+class PromptManager(DocumentManager):
 
     
     def full_key(self, key):
@@ -15,16 +17,7 @@ class PromptManager():
 
     def store_prompt(self, key, l_strings:list[str], append=True, prompt_type="literature_note"):
         path = self.full_key(key)
-        with h5py.File(HDF5_PATH, "a") as f:
-            if path not in f:
-                f[path] = l_strings
-                f[path].attrs["prompt_type"] = prompt_type
-            else:
-                if append:
-                    f[path].extend(l_strings)
-                else:
-                    f[path] = l_strings
-                    f[path].attrs["prompt_type"] = prompt_type
+        self.put_document(path, l_strings, append=append, attributes={"prompt_type":prompt_type})
 
     def prompts_by_type(self, prompt_type=None):
         prompts = self.list_prompts()
@@ -45,22 +38,20 @@ class PromptManager():
         else:
             return None
 
-    def get_prompt(self, key):
-        path = self.full_key(key)
-        with h5py.File(HDF5_PATH, "r") as f:
-            if path not in f:
-                return []
-            else:
-                return list(f[path])
-    
+    def get_prompt(self, key) -> list[str]:
+        path = key
+        if not key.startswith(BASE_PROMPTS_KEY):
+            path = self.full_key(key)
+        
+        data = self.get_document(path)
+        return [str(x, "UTF-8") for x in data]
+        
     def delete_prompt(self, key:str):
         """
         Delete the prompt by key
         """
         path = self.full_key(key)
-        with h5py.File(HDF5_PATH, "a") as f:
-            if path in f:
-                del f[path]
+        self.delete_document(path)
 
     def list_prompts(self):
         """

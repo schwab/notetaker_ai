@@ -284,8 +284,10 @@ class ManageHDF5:
         
         pm = PromptManager()
         prompt_text = pm.get_prompt(prompt_key)
+
         if not prompt_text:
             raise ValueError(f"prompt_key {prompt_key} not found.")
+        prompt_text = "\n".join(prompt_text)
         llm = LLMManager(prompt_text=prompt_text)
         size = self.get_row_count(transcript_key)
         #size = 100
@@ -329,11 +331,12 @@ class ManageHDF5:
         prompt_text = PromptManager().get_prompt(prompt_key)
         if not prompt_text:
             raise ValueError(f"prompt_key {prompt_key} is invalid")
+        prompt_text = "\n".join(prompt_text)
         llm = LLMManager(prompt_text=prompt_text)
         result  = llm.generate(text= "\n".join(lines))
         return result.content.replace("<end_message>","").replace("< end message>", "").strip()
     
-    def generate_permanent_note(self, litnote_key, permanent_note_name, prompt_key:str):
+    def generate_permanent_note(self, litnote_key, permanent_note_name, prompt_key:str) -> list[str]:
         """Generate a permanent note by calling the llm with a prompt.
 
         Args:
@@ -350,8 +353,9 @@ class ManageHDF5:
         prompt_text = PromptManager().get_prompt(prompt_key)
         if not prompt_text:
             raise ValueError(f"prompt_key {prompt_key} is invalid.")
+        prompt_text = "\n".join(prompt_text)
         llm = LLMManager(prompt_text=prompt_text)
         result  = llm.generate(d_props={"p_note_name":permanent_note_name, 
                                 "text": lit_text})
-        return result.content.replace("<end_message>","").replace("< end message>", "").strip()
+        return result.content.replace("<end_message>","").replace("< end message>", "").strip().split("\n")
         
