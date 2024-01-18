@@ -184,6 +184,12 @@ def convert_url(url, start):
     else:
         return req.url
               
+def prompt_save_file(lines:list[str], key:str, default_path:str ="data/lit_{key}.md"):
+    # choose the file name to save to
+    file_name = questionary.text("What should the file name be?", default=default_path.format(key=key)).ask()
+    with open(file_name, 'w') as f:
+        f.write("\n".join(lines))
+        
 def literature_note_menu():
     """ Menu for creating Literature notes from transcripts"""
     options = [f"{LIT_NOTES} {KEYS}",
@@ -252,8 +258,7 @@ def literature_note_menu():
             # choose the /transcripts key to save
             transcripts = manager.get_keys(under="/transcripts")
             key = questionary.select("Which transcript would you like to save?", choices=transcripts).ask()
-            # choose the file name to save to
-            file_name = questionary.text("What should the file name be?", default=f"data/lit_{key}.md").ask()
+            
             lines = []
             df = manager.get_dataframe( key, "/literature_notes")
             # lookup the /status df
@@ -270,8 +275,8 @@ def literature_note_menu():
                 url = convert_url(video_url, time_start)
                 parts.insert(1,f"[Source Clip]({url})")
                 lines.extend(parts)
-            with open(file_name, 'w') as f:
-                f.write("\n".join(lines))
+            prompt_save_file(lines, key, default_path="data/lit_%s.md")
+            
         
         if answer == f"{GENERATE} {PERMANANT_NOTE} {NAMES}":
             # Choose the literature notes to process
@@ -307,13 +312,15 @@ def literature_note_menu():
             permanent_notes_prompts = PromptManager().prompts_by_type("permanent_note")
             prompt_key = questionary.select("Which prompt should be used?", choices=permanent_notes_prompts).ask()
             result = manager.generate_permanent_note(litnote_key=lit_note_key, permanent_note_name=p_note_name, prompt_key=prompt_key)
-            md = Markdown(result)
+            md = Markdown("\n".join(result))
             console = Console()
             console.print(md)
             store_yn = questionary.confirm("Store this permanent note?").ask()
             if store_yn:
-                p_note_name = questionary.text("Enter a note name to store...").ask()
-                print("not implemented yet.")
+                potential_note_name = manager.file_name_to_key(p_note_name)
+                p_note_name = questionary.text("Enter a note name to store...", default=potential_note_name).ask()
+                prompt_save_file(result, p_note_name, default_path="data/notes/pn_{key}.md")
+                
             #print(result)
           
         if answer == DELETE + " " + LIT_NOTES:

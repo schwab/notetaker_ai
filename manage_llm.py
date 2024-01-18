@@ -11,7 +11,6 @@ PERMANENT_NOTE_NAMES_PROMPT = os.getenv("PERMANANT_NOTE_NAMES_PROMPT", "prompts/
 
 class LLMManager():
     def __init__(self, prompt_text:str) -> None:
-        
     
         self.prompt = ChatPromptTemplate.from_template(prompt_text)
     

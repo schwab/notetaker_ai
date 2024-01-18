@@ -14,8 +14,10 @@ class DocumentManager:
             return list(f[full_key])
 
     def put_document(self, full_key:str, document:str, append=False, attributes:dict={}):
+        exists = self.exists(full_key)
+        if exists and not append:
+            self.delete_document(full_key)
         with h5py.File(HDF5_PATH, "a") as f:
-            
             if not append:
                 f[full_key] = document
                 if attributes:
@@ -25,6 +27,9 @@ class DocumentManager:
                 if append:
                     f[full_key].extend(document)
 
+    def exists(self, full_key:str):
+        with h5py.File(HDF5_PATH, "r") as f:
+            return full_key in f
     def delete_document(self, full_key:str):
         with h5py.File(HDF5_PATH, "a") as f:
             if full_key in f:
