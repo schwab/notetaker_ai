@@ -7,7 +7,7 @@ load_dotenv()
 
 BASE_PROMPTS_KEY = os.getenv("BASE_PROMPTS_KEY", "/prompts")
 TEXT_DIR = "prompts"
-PROMPT_TYPES = ["literatue_note","permanent_note"]
+PROMPT_TYPES = ["literature_note","permanent_note"]
 
 class PromptManager(DocumentManager):
 

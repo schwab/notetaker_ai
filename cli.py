@@ -27,6 +27,7 @@ KEYS = "Keys 🔑"
 SAVE_FILE = "Save 💾"
 UPLOAD = "Upload 📤"
 VIDEO = "Video 📹"
+MP3 = "MP3 🎵"
 ADD = "Add ➕"
 DOWNLOAD = "Download 📥"
 QUEUE = "Queue 📬"
@@ -80,6 +81,7 @@ def video_menu():
     """Menu for managing videos."""
     options = [DISPLAY + " " + VIDEO + QUEUE,
                ADD + " " + VIDEO,
+               ADD + " " + MP3,
                DOWNLOAD + " " + VIDEO,
                "Download All Pending Videos",
                "Remove Video", 
@@ -118,7 +120,24 @@ def video_menu():
                        "duration":info_dict["duration_string"],
                        "key_name":info_dict["key"]
                        }  
+            
             manager.set_video_properties(path, d_props)
+            
+        if answer == ADD + " " + MP3:
+            manager = ManageHDF5()
+            _,_,files = next(os.walk(MP3_PATH))
+            mp3_file = questionary.select("Which mp3 file would you like to add?", choices=files).ask()
+            d_props = {"status":"mp3_downloaded",
+                          "mp3_file":"data/mp3/" + mp3_file,
+                          "key_name":manager.file_name_to_key(mp3_file.replace(".mp3","")),
+                            "description":manager.file_name_to_key(mp3_file.replace(".mp3","")) + " mp3 file",
+                            "thumbnail_url":"https://via.placeholder.com/150",
+                            "channel_url":"https://via.placeholder.com/150",
+                            "channel":"Unknown",
+                            "duration":"-1"
+                          }
+            manager.add_video_to_process(mp3_file)
+            manager.set_video_properties(mp3_file, d_props)
             
         if answer == DELETE + " " + VIDEO + QUEUE:
             manager = ManageHDF5()
