@@ -32,12 +32,17 @@ ADD = "Add ➕"
 DOWNLOAD = "Download 📥"
 QUEUE = "Queue 📬"
 GENERATE = "Generate 🧠"
+RETRIEVE = "Retrieve 📥"
+AUGMENT = "Augment 🧠"
 PERMANANT_NOTE = "Permanant Note 📝"
 NAMES = "Names 📛"
 DELETE = "Delete 🗑️"
-PROMPT = "Prompt"
+PROMPT = "Prompt 📝"
 MENU = "Menu 📝"
 TYPE = "Type"
+INDEX = "Index 📇"
+QUERY = "Query 🔍"
+LLM = "LLM 🧠"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
@@ -76,6 +81,28 @@ def show_state(columns:list[str]=None, state_filter:str=None):
     t = create_df_table("Video Queue", df[columns])
     console = Console()
     console.print(t)
+def rag_menu():
+    """Menu for creating RAG queries against a redis store"""
+    options = ["Select " + INDEX,
+               ADD + " to " + INDEX,
+               DELETE + " " + INDEX,
+               "Set " + PROMPT,
+               QUERY + " " + INDEX,
+               QUERY + " " + LLM]
+    should_exit = False
+    selected_index = ""
+    while not should_exit:
+        answer = questionary.select("What would you like to do?", choices=options).ask()
+        if answer == "Select " + INDEX:
+            manager = ManageHDF5()
+            keys = manager.get_keys(under="/rag")
+            if keys:
+                selected_index = questionary.select("Which index would you like to use?", choices=keys).ask()
+            else:
+                print("No indexes found")
+        if answer == ADD + " to " + INDEX:
+            
+
     
 def video_menu():
     """Menu for managing videos."""
