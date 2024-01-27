@@ -16,6 +16,7 @@ from urllib.parse import parse_qs
 from requests.models import PreparedRequest
 
 from rich.markdown import Markdown
+from rag_provider import RagProvider
 
 EXIT = "Exit🚪"
 LITERATURE = "Literature 📚"
@@ -32,12 +33,18 @@ ADD = "Add ➕"
 DOWNLOAD = "Download 📥"
 QUEUE = "Queue 📬"
 GENERATE = "Generate 🧠"
+RETRIEVE = "Retrieve 📥"
+AUGMENT = "Augment 🧠"
 PERMANANT_NOTE = "Permanant Note 📝"
 NAMES = "Names 📛"
 DELETE = "Delete 🗑️"
-PROMPT = "Prompt"
+PROMPT = "Prompt 📝"
+RAG = "RAG 🧠"
 MENU = "Menu 📝"
 TYPE = "Type"
+INDEX = "Index 📇"
+QUERY = "Query 🔍"
+LLM = "LLM 🧠"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
@@ -76,7 +83,79 @@ def show_state(columns:list[str]=None, state_filter:str=None):
     t = create_df_table("Video Queue", df[columns])
     console = Console()
     console.print(t)
-    
+
+def get_file_list(path:str, file_extension:list[str]=["md","txt"]):
+    ## allow the user to select a list of files in the path
+    cur_dir,dirs ,files = next(os.walk(path))
+    # filter files to only those with the specified extension
+    files = [f for f in files if f.split(".")[-1] in file_extension]
+    # use questionary to select the files
+    selected_files = questionary.checkbox("Which files would you like to use?", choices=files).ask()
+    selected_files = [os.path.join(cur_dir, f) for f in selected_files]
+    # ask the user if they want to select files from another directory or continue
+    answer = questionary.confirm("Would you like to select files from another directory?").ask()
+    if answer:
+        # get the new path
+        new_path = questionary.select("Which directory would you like to use?", choices=dirs).ask()
+        # get the files in the new path
+        new_files = get_file_list(os.path.join(cur_dir, new_path))
+        # combine the files
+        selected_files.extend(new_files)
+    return selected_files
+       
+def rag_menu():
+    """Menu for creating RAG queries against a redis store"""
+    options = ["Select " + INDEX, 
+               EXIT
+               ]
+    """ADD + " to " + INDEX,
+                              DELETE + " " + INDEX,
+                              "Set " + PROMPT,"""
+    options_requring_index = [
+                              QUERY + " " + INDEX]
+    should_exit = False
+    selected_index = ""
+    ragp = RagProvider()
+    while not should_exit:
+        # Toggle availablilty of options based on state of vectorstore selected
+        if ragp.index_set:
+            for option in options_requring_index:
+                if not option in options:
+                    options.append(option)      
+        else:
+            for option in options_requring_index:
+                if option in options:
+                    options.remove(option)
+            
+                
+        answer = questionary.select("What would you like to do?", choices=options).ask()
+        if answer == "Select " + INDEX:
+            
+            indexes = ragp.list_indexes()
+            if indexes:
+                selected_index = questionary.select("Which index would you like to use?", choices=indexes).ask()
+                if selected_index:
+                    selected = ragp.get_existing_index(selected_index)
+                    if selected:
+                        print(f"Selected {selected_index}")
+                    else:
+                        print(f"Could not find {selected_index}")
+                    #selected_files = get_file_list("data/")
+                    #texts = ragp.get_documents_from_file_paths(selected_files)
+            else: 
+                index_name = questionary.text("What should the index be called?").ask()
+                selected_files = get_file_list("data/")  
+                texts = ragp.get_documents_from_file_paths(selected_files)
+                ragp.get_index(index_name, texts)
+        
+        if answer == QUERY + " " + INDEX:
+            query = questionary.text("What is your query?").ask()
+            results = ragp.query_similar(query)
+            for r in results:
+                print(r)
+        if answer == EXIT:
+            should_exit = True
+            
 def video_menu():
     """Menu for managing videos."""
     options = [DISPLAY + " " + VIDEO + QUEUE,
@@ -420,7 +499,7 @@ def prompt_menu():
 @click.command()
 def menu():
     """Menu for managing the queue."""
-    options = [VIDEO, TRANSCRIBE ,PROMPT + " " + MENU, LIT_NOTES, EXIT]
+    options = [VIDEO, TRANSCRIBE ,PROMPT + " " + MENU, LIT_NOTES, RAG + " " + MENU,  EXIT]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
@@ -432,6 +511,8 @@ def menu():
             literature_note_menu()
         if answer == PROMPT + " " + MENU:
             prompt_menu()
+        if answer == RAG + " " + MENU:
+            rag_menu()
         if answer == EXIT:
             should_exit = True
            
