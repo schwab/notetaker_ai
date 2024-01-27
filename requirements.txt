@@ -10,3 +10,5 @@ click
 questionary
 rich
 redis
+sentence-transformers
+langchain-community
