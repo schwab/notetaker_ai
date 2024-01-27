@@ -105,7 +105,8 @@ def get_file_list(path:str, file_extension:list[str]=["md","txt"]):
        
 def rag_menu():
     """Menu for creating RAG queries against a redis store"""
-    options = ["Select " + INDEX
+    options = ["Select " + INDEX, 
+               EXIT
                ]
     """ADD + " to " + INDEX,
                               DELETE + " " + INDEX,
@@ -152,6 +153,8 @@ def rag_menu():
             results = ragp.query_similar(query)
             for r in results:
                 print(r)
+        if answer == EXIT:
+            should_exit = True
             
 def video_menu():
     """Menu for managing videos."""
