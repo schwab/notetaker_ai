@@ -154,6 +154,7 @@ def transcribe_menu():
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
+        
         if answer == "Show Transcribed Keys":
             manager = ManageHDF5()
             keys = manager.get_keys(under="/transcripts")
@@ -186,7 +187,6 @@ def transcribe_menu():
         
         if answer == "Exit":
             should_exit = True
-
 
 def convert_url(url, start):
     """
