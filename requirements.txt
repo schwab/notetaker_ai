@@ -9,3 +9,6 @@ langchain-openai
 click
 questionary
 rich
+redis
+sentence-transformers
+langchain-community
