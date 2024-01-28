@@ -86,19 +86,27 @@ def show_state(columns:list[str]=None, state_filter:str=None):
 
 def get_file_list(path:str, file_extension:list[str]=["md","txt"]):
     ## allow the user to select a list of files in the path
-    cur_dir,dirs ,files = next(os.walk(path))
+    cur_dir, dirs ,files = next(os.walk(path))
+    ## Allow the user to choose the directory
+    dirs = [d for d in dirs if not d.startswith(".")]
+    dirs = [os.path.join(cur_dir, d) for d in dirs]
+    # get the files in the current directory
+    selected_dir = questionary.select("Which directory would you like to use?", choices=dirs).ask()
+    cur_dir, dirs ,files = next(os.walk(selected_dir))
     # filter files to only those with the specified extension
     files = [f for f in files if f.split(".")[-1] in file_extension]
+    if not files:
+        return []
     # use questionary to select the files
     selected_files = questionary.checkbox("Which files would you like to use?", choices=files).ask()
-    selected_files = [os.path.join(cur_dir, f) for f in selected_files]
+    selected_files = [os.path.join(selected_dir, f) for f in selected_files]
     # ask the user if they want to select files from another directory or continue
     answer = questionary.confirm("Would you like to select files from another directory?").ask()
     if answer:
         # get the new path
         new_path = questionary.select("Which directory would you like to use?", choices=dirs).ask()
         # get the files in the new path
-        new_files = get_file_list(os.path.join(cur_dir, new_path))
+        new_files = get_file_list(os.path.join(selected_dir, new_path))
         # combine the files
         selected_files.extend(new_files)
     return selected_files
@@ -112,7 +120,8 @@ def rag_menu():
                               DELETE + " " + INDEX,
                               "Set " + PROMPT,"""
     options_requring_index = [
-                              QUERY + " " + INDEX]
+                              QUERY + " " + INDEX,
+                              ADD + " to " + INDEX]
     should_exit = False
     selected_index = ""
     ragp = RagProvider()
@@ -153,6 +162,15 @@ def rag_menu():
             results = ragp.query_similar(query)
             for r in results:
                 print(r)
+        if answer == ADD + " to " + INDEX:
+            selected_files = get_file_list("data/")
+            
+            if not selected_files:
+                print("No files in directory.")
+                continue
+            else:
+                texts = ragp.get_documents_from_file_paths(selected_files)
+                ragp.add_documents(texts)
         if answer == EXIT:
             should_exit = True
             

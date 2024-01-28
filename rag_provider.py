@@ -120,12 +120,11 @@ class RagProvider:
             self._vectorstore_name = index_name
             return vectorstore
         
-    def add_documents(self, texts, metadatas={list[dict]}):
-        if self._vectorstore is None:
-            raise Exception("No vectorstore loaded")
-        self._vectorstore.add_texts(texts,metadatas=metadatas)    
+    def add_documents(self, texts:list[Document]):
+        self._vectorstore.add_documents(texts)
+        return True
     
-    def query_similar(self, query, top_k=1):
+    def query_similar(self, query, top_k=5):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
         return self._vectorstore.similarity_search(query, top_k=top_k)
