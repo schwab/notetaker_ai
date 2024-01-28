@@ -3,7 +3,8 @@ import questionary
 from rich.table import Table
 from rich.console import Console
 from manager_hdf5 import ManageHDF5, BASE_VIDEO_KEY
-from prompt_manager import PROMPT_TYPES, PromptManager
+#from prompt_manager import PROMPT_TYPES, PromptManager
+from prompt_manager_redis import PromptManagerRedis as PromptManager, PROMPT_TYPES
 from transcribe_provider import transcribe
 from yt_dlp_mp3 import download_audio, MP3_PATH
 import os
