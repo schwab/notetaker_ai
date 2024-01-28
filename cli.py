@@ -120,9 +120,14 @@ def rag_menu():
     """ADD + " to " + INDEX,
                               DELETE + " " + INDEX,
                               "Set " + PROMPT,"""
+    
     options_requring_index = [
                               QUERY + " " + INDEX,
-                              ADD + " to " + INDEX]
+                              ADD + " to " + INDEX,
+                              ]
+    options_requring_rag_prompt = [
+        RAG + " " + QUERY
+    ]
     should_exit = False
     selected_index = ""
     ragp = RagProvider()
@@ -137,7 +142,18 @@ def rag_menu():
                 if option in options:
                     options.remove(option)
             
-                
+        # Enable "RAG 🧠 Query 🔍" when vector store is selected and at least one rag_prompt exists
+        prompt_provider = PromptManager()
+        rag_prompts = prompt_provider.prompts_by_type(prompt_type="rag_prompt")
+        if ragp.index_set and rag_prompts:
+            for option in options_requring_rag_prompt:
+                if not option in options:
+                    options.append(option)
+        else:
+            for option in options_requring_rag_prompt:
+                if option in options:
+                    options.remove(option)      
+                      
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == "Select " + INDEX:
             
@@ -163,6 +179,7 @@ def rag_menu():
             results = ragp.query_similar(query)
             for r in results:
                 print(r)
+                
         if answer == ADD + " to " + INDEX:
             selected_files = get_file_list("data/")
             
@@ -172,6 +189,21 @@ def rag_menu():
             else:
                 texts = ragp.get_documents_from_file_paths(selected_files)
                 ragp.add_documents(texts)
+        if answer == RAG + " " + QUERY:
+            # Allow user to select an rag_prompt
+            prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
+            if prompt:
+                # Allow user to enter a query
+                query = questionary.text("What is your query?").ask()
+                # Get the results
+                ragp.build_rag_pipeline(prompt)
+                results = ragp.query_rag_pipeline(query)
+                # Display the results
+                md = Markdown(results)
+                console=Console()
+                console.print(md)
+                #print(results)
+                
         if answer == EXIT:
             should_exit = True
             

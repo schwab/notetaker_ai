@@ -19,7 +19,11 @@ class DocumentMangerRedis():
         return self.redis.lrange(full_key, 0, -1)
 
     def get_document_attributes(self, full_key:str):
-        return self.redis.hgetall(full_key)
+        temp_d =  self.redis.hgetall(full_key)
+        result_d = {}
+        for k, v in temp_d.items():
+            result_d[k.decode("utf-8")] = v.decode("utf-8")
+        return result_d
     
     def put_document(self, full_key:str, document:list[str], append=False, attributes:dict={}):
         exists = self.exists(full_key)
