@@ -84,7 +84,8 @@ class RagProvider:
         vectorstore = Redis.from_existing_index(
                     embedding=EMBEDDINGS,
                     index_name=index_name,
-                    redis_url=REDIS_URL
+                    redis_url=REDIS_URL,
+                    schema={"content":"","path":""} 
                 )
         self._vectorstore = vectorstore
         self._vectorstore_name = index_name
@@ -119,7 +120,11 @@ class RagProvider:
             self._vectorstore_name = index_name
             return vectorstore
         
-    def query_similar(self, query, top_k=1):
+    def add_documents(self, texts:list[Document]):
+        self._vectorstore.add_documents(texts)
+        return True
+    
+    def query_similar(self, query, top_k=5):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
         return self._vectorstore.similarity_search(query, top_k=top_k)
