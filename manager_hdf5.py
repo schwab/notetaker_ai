@@ -3,7 +3,7 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 from manage_llm import LLMManager
-from prompt_manager import PromptManager
+from prompt_manager_redis import PromptManagerRedis as PromptManager
 
 load_dotenv()
 

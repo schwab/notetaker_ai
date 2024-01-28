@@ -36,12 +36,13 @@ class PromptManagerRedis(DocumentMangerRedis):
         p_types = {}
         if prompts:
             for path in prompts:
-                full_path = self.full_key(path)
-                if "prompt_type" in self.get_document_attributes(full_path):
-                    type_name = self.get_document_attributes(full_path)["prompt_type"]
+                full_path = self.full_key(path) + ":attribs"
+                prompt_attribs = self.get_document_attributes(full_path)
+                if "prompt_type" in prompt_attribs:
+                    type_name = prompt_attribs["prompt_type"]
                     if type_name not in p_types:
                         p_types[type_name] = []
-                    p_types[type_name].append(full_path)
+                    p_types[type_name].append(full_path.replace(":attribs",""))
         if not prompt_type:
             return p_types
         elif prompt_type in p_types:

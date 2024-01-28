@@ -6,7 +6,12 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import  UnstructuredURLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from langchain.prompts import PromptTemplate
+from langchain.chains import RetrievalQA
+from langchain_community.chat_models import ChatOllama
+
 from dotenv import load_dotenv
+from prompt_manager_redis import PromptManagerRedis
 load_dotenv()
 EMBEDDINGS_MODEL = os.getenv("EMBEDDINGS_MODEL", "all-MiniLM-L6-v2")
 model_kwargs = {'device': 'cpu'}
@@ -18,6 +23,8 @@ EMBEDDINGS = HuggingFaceEmbeddings(model_name=EMBEDDINGS_MODEL, model_kwargs=mod
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+OLLAMA_URL = os.getenv("OLLAMA_BASEURL")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 
 REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}"
 INDEX_NAME = f"qna:idx"
@@ -27,6 +34,8 @@ class RagProvider:
     def __init__(self):
         self._vectorstore = None
         self._vectorstore_name = None
+        self._llm = None
+        self._retrieval_qa = None
     
     @property
     def index_set(self):
@@ -127,4 +136,43 @@ class RagProvider:
     def query_similar(self, query, top_k=5):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
-        return self._vectorstore.similarity_search(query, top_k=top_k)
+        return self._vectorstore.similarity_search(query, 
+                                                   top_k=top_k, 
+                                                   distance_threshold=0.5)
+    
+    def get_prompt(self, prompt_name) -> PromptTemplate:
+        """Create the QA chain."""
+        
+        # get the prompt text
+        pmr = PromptManagerRedis()
+        prompt_template = pmr.get_prompt(prompt_name)
+        prompt_template = "\n".join(prompt_template)
+        prompt = PromptTemplate(
+            template=prompt_template,
+            input_variables=["context", "question"]
+        )
+        return prompt
+
+    def build_rag_pipeline(self, prompt, top_k=5):
+        if self._vectorstore is None:
+            raise Exception("No vectorstore loaded")
+        # get the top k similar documents
+        #similar = self._vectorstore.similarity_search(query, top_k=top_k)
+        prompt_template = self.get_prompt(prompt)
+        # create the llm
+        if not self._llm:
+            self._llm = ChatOllama(base_url=OLLAMA_URL, model=OLLAMA_MODEL)
+        
+        # create the retrieval qa chain
+        self._retrieval_qa = RetrievalQA.from_chain_type(
+                llm=self._llm,
+                chain_type="stuff",
+                retriever=self._vectorstore.as_retriever(),
+                chain_type_kwargs={"prompt":prompt_template}, 
+                verbose=True
+            )
+    def query_rag_pipeline(self, query):
+        return self._retrieval_qa.run({"query":query})
+        # query the cchain
+        
+        
