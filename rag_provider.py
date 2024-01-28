@@ -2,8 +2,8 @@
 import redis
 import os
 from langchain.vectorstores.redis import Redis
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.document_loaders import  UnstructuredURLLoader
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.document_loaders import  UnstructuredURLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from dotenv import load_dotenv
