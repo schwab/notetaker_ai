@@ -29,7 +29,7 @@ class PromptManagerRedis(DocumentMangerRedis):
         """
         Return a list of the prompt keys available
         """
-        return [str(x, "UTF-8") for x in self.redis.keys(BASE_PROMPTS_KEY + "*") if not ":attribs" in str(x, "UTF-8")]
+        return [str(x, "UTF-8") for x in self._redis.keys(BASE_PROMPTS_KEY + "*") if not ":attribs" in str(x, "UTF-8")]
     
     def prompts_by_type(self, prompt_type=None):
         prompts = self.list_prompts()

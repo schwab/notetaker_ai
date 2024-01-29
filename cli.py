@@ -6,6 +6,7 @@ from manager_hdf5 import ManageHDF5, BASE_VIDEO_KEY
 #from prompt_manager import PROMPT_TYPES, PromptManager
 from prompt_manager_redis import PromptManagerRedis as PromptManager, PROMPT_TYPES
 from transcribe_provider import transcribe
+from video_provider import VideoProvider
 from yt_dlp_mp3 import download_audio, MP3_PATH
 import os
 import pandas as pd
@@ -18,6 +19,7 @@ from requests.models import PreparedRequest
 
 from rich.markdown import Markdown
 from rag_provider import RagProvider
+from transcript_provider import TranscriptProvider
 
 EXIT = "Exit🚪"
 LITERATURE = "Literature 📚"
@@ -64,24 +66,27 @@ def create_df_table(title:str="dataframe", df:pd.DataFrame=pd.DataFrame.empty):
         table.add_row(*s_row, style="cyan")
     return table
 
-def show_state(columns:list[str]=None, state_filter:str=None):
+def show_video_queue_state(columns:list[str]=None, state_filter:str=None):
     """Show the current state of the queue."""
-    manager = ManageHDF5()
-    df = manager.get_dataframe("queue",BASE_VIDEO_KEY)
+    vp = VideoProvider()
+    waiting = vp.get_waiting()
+    mp3_downloaded = vp.get_mp3_downloaded()
+    transcribed = vp.get_transcribed()
+    max_l = max(len(waiting), len(mp3_downloaded), len(transcribed))
+    if max_l == 0:
+        print("No videos in queue")
+        return
+    # pad the lists to the same length
+    waiting.extend([""]*(max_l-len(waiting)))
+    mp3_downloaded.extend([""]*(max_l-len(mp3_downloaded)))
+    transcribed.extend([""]*(max_l-len(transcribed)))
+    # create a dataframe
+    df = pd.DataFrame({"waiting":waiting, "mp3_downloaded":mp3_downloaded, "transcribed":transcribed})
     if df.empty:
         print("No videos in queue")
         return
-    if columns is None:
-        columns = list(df.columns)
-        
-        # let the user select which columns to show
-        columns = questionary.checkbox("Which columns would you like to show?", choices=columns).ask()
-    
-    # filter to state specified by state_filter
-    if not state_filter is None:
-        df = df[df["status"]==state_filter]
     # display table
-    t = create_df_table("Video Queue", df[columns])
+    t = create_df_table("Video Queue", df)
     console = Console()
     console.print(t)
 
@@ -214,20 +219,20 @@ def video_menu():
                ADD + " " + MP3,
                DOWNLOAD + " " + VIDEO,
                "Download All Pending Videos",
-               "Remove Video", 
+               "Remove " + VIDEO, 
                DELETE + " " + VIDEO + QUEUE, 
                EXIT]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == DISPLAY + " " + VIDEO + QUEUE:
-            show_state()
+            show_video_queue_state()
         if answer == ADD + " " + VIDEO :
             path = questionary.text("Enter the path to the video").ask()
-            manager = ManageHDF5()
-            manager.add_video_to_process(path)
+            vp = VideoProvider()
+            vp.add_to_waiting(path)
         
-        if answer == "Remove Video":
+        if answer == "Remove " + VIDEO:
             # get a list of the existing videos
             manager = ManageHDF5()
             videos = manager.get_unprocessed_videos_in_queue()
@@ -236,8 +241,11 @@ def video_menu():
             
             manager.remove_video_to_process(path)
         if answer == DOWNLOAD + " " + VIDEO:
-            manager = ManageHDF5()
-            videos = manager.get_unprocessed_videos_in_queue()
+            vp = VideoProvider()
+            videos = vp.get_waiting()
+            if not videos:
+                print("No videos in queue")
+                continue
             path = questionary.select("Which video would you like to download?", choices=videos).ask()
             info_dict = download_audio(path)
             #mp3_file = os.path.join(MP3_PATH, info_dict["title"] + ".mp3")
@@ -250,11 +258,10 @@ def video_menu():
                        "duration":info_dict["duration_string"],
                        "key_name":info_dict["key"]
                        }  
-            
-            manager.set_video_properties(path, d_props)
+            vp.put_document(info_dict["key"], ["WAITING"], attributes=d_props)
+            vp.waiting_to_mp3_downloaded(path, info_dict["key"])
             
         if answer == ADD + " " + MP3:
-            manager = ManageHDF5()
             _,_,files = next(os.walk(MP3_PATH))
             mp3_file = questionary.select("Which mp3 file would you like to add?", choices=files).ask()
             d_props = {"status":"mp3_downloaded",
@@ -266,12 +273,14 @@ def video_menu():
                             "channel":"Unknown",
                             "duration":"-1"
                           }
-            manager.add_video_to_process(mp3_file)
-            manager.set_video_properties(mp3_file, d_props)
+            vp = VideoProvider()
+            vp.put_document(d_props["key_name"], ["WAITING"], attributes=d_props)
+            vp.add_to_waiting(d_props["key_name"])
+            vp.waiting_to_mp3_downloaded(d_props["key_name"]) 
             
         if answer == DELETE + " " + VIDEO + QUEUE:
-            manager = ManageHDF5()
-            manager.delete_queue()
+            print("Not implemented")
+            
         if answer == EXIT:
             should_exit = True
 
@@ -286,34 +295,38 @@ def transcribe_menu():
         answer = questionary.select("What would you like to do?", choices=options).ask()
         
         if answer == "Show Transcribed Keys":
-            manager = ManageHDF5()
-            keys = manager.get_keys(under="/transcripts")
+            t_provider = TranscriptProvider()
+            keys = t_provider.get_keys()
             for key in keys:
                 print(key)
                 
-        if answer == "Ready to Transcribe":
-            show_state(columns=["key_name"], state_filter="mp3_downloaded")
+        #if answer == "Ready to Transcribe":
+        # 1   show_state(columns=["key_name"], state_filter="mp3_downloaded")
         
         if answer == "Transcribe":
-            manager = ManageHDF5()
-            df = manager.get_dataframe("queue",BASE_VIDEO_KEY)
-            if df.empty:
-                print("No videos in queue")
-                return
-            keys = df[df["status"]=="mp3_downloaded"]["key_name"].values
-            if len(keys) == 0:
+           
+            video_provider = VideoProvider()
+            #l_videos = video_provider.get_waiting()
+            #if l_videos:
+            #    print("No videos in queue")
+            #    break
+            ready_to_transcribe = video_provider.get_mp3_downloaded()
+            if not ready_to_transcribe:
                 print("No videos ready to transcribe")
-                return
-            mp3_files = df[df["status"]=="mp3_downloaded"]["mp3_file"].values   
-            mp3_files = [os.path.join(base_dir(), mp3_file) for mp3_file in mp3_files]
-            key = questionary.select("Which video would you like to transcribe?", choices=keys).ask()
-            d_keys_mp3 = dict(zip(keys, mp3_files))
-            for k,v in d_keys_mp3.items():
-                print("Transcribing: ", k)
-                tsv_file = transcribe(v)
-                df = pd.read_csv(tsv_file, sep="\t")
-                manager.save_df_to_hd5(df, key=k)  
-                os.remove(tsv_file)   
+                break
+            selected_video_key = questionary.select("Which video would you like to transcribe?", choices=ready_to_transcribe).ask()
+            selected_video_attribs = video_provider.get_document_attributes(selected_video_key)
+            mp3_file_name = selected_video_attribs.get("mp3_file")
+            key_name = selected_video_attribs.get("key_name")
+            print("Transcribing: ", mp3_file_name)
+            tsv_file = transcribe(mp3_file_name)
+            df = pd.read_csv(tsv_file, sep="\t")
+            #print(df)
+            # TODO: save the transcript and its timestamps to redis
+            tp = TranscriptProvider()
+            tp.save_transcript(key_name, df, selected_video_attribs)
+            video_provider.mp3_downloaded_to_transcribed(key_name)
+            #os.remove(tsv_file)   
         
         if answer == "Exit":
             should_exit = True
@@ -354,6 +367,7 @@ def literature_note_menu():
     should_exit = False
     p_note_names = []
     lit_note_key = None
+    # TODO: convert all transcripts methods to use redis
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == f"{LIT_NOTES} {KEYS}":
