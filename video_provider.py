@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 from document_manager_redis import DocumentMangerRedis
+from yt_dlp_mp3 import download_audio
 
 BASE_VIDEO_KEY = os.getenv("BASE_VIDEO_KEY", "video")
 TRANSCRIBED_QUEUE = os.getenv("TRANSCRIBED_QUEUE", "transcribed")
@@ -35,6 +36,47 @@ class VideoProvider(DocumentMangerRedis):
             file_name = file_name.replace(c,"_")
         return file_name.replace(" ","_").replace("__","_").lower()[:100]
     
+    def rem_video_waiting(self, video_url):
+        super().redis.srem(BASE_VIDEO_KEY + ":" + WAITING_QUEUE, 0, video_url)
+        
+    def download_video_mp3(self, video_path:str):
+        """
+        Add a youtube video url to the system (in preparation for download of the mp3 file)
+        """
+        info_dict = download_audio(video_path)
+        #mp3_file = os.path.join(MP3_PATH, info_dict["title"] + ".mp3")
+        d_props = {"status":"mp3_downloaded", 
+                    "mp3_file":info_dict["mp3_file"], 
+                    "thumbnail_url":info_dict["thumbnail"],
+                    "description":info_dict["description"],
+                    "channel_url":info_dict["channel_url"],
+                    "channel":info_dict["channel"],
+                    "duration":info_dict["duration_string"],
+                    "key_name":info_dict["key"], 
+                    "video_path":video_path
+                    }  
+        self.put_document(info_dict["key"], ["WAITING"], attributes=d_props)
+        self.waiting_to_mp3_downloaded(video_path, info_dict["key"])
+
+    def add_mp3_from_file(self, mp3_file:str):
+        """
+        Add an mp3 file definition to the system (in preparation for transcription)
+        """
+        keyname = self.file_name_to_key(mp3_file.replace(".mp3",""))
+        d_props = {"status":"mp3_downloaded",
+                        "mp3_file":"data/mp3/" + mp3_file,
+                        "key_name":keyname,
+                        "description":keyname + " mp3 file",
+                        "thumbnail_url":"https://via.placeholder.com/150",
+                        "channel_url":"https://via.placeholder.com/150",
+                        "channel":"Unknown",
+                        "duration":"-1", 
+                        "video_path":keyname + " mp3 file"
+                        }
+        
+        self.put_document(d_props["key_name"], ["WAITING"], attributes=d_props)
+        self.add_to_waiting(keyname + " mp3 file")
+        self.waiting_to_mp3_downloaded(keyname + " mp3 file", d_props["key_name"])
         
     
     

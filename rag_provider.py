@@ -130,15 +130,23 @@ class RagProvider:
             self._vectorstore_name = index_name
             return vectorstore
         
+    def generate_documents_from_text(self, text:str, metadata={}):
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, add_start_index = True)
+        lines = text_splitter.split_text(text)
+        texts = []
+        for line in lines:
+            texts.append(Document(page_content=line,metadata=metadata))
+        return texts
+    
     def add_documents(self, texts:list[Document]):
         self._vectorstore.add_documents(texts)
         return True
     
-    def query_similar(self, query, top_k=5):
+    def query_similar(self, query, top_k=10):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
         return self._vectorstore.similarity_search(query, 
-                                                   top_k=top_k, 
+                                                   k=top_k, 
                                                    distance_threshold=0.5)
     
     def get_prompt(self, prompt_name) -> PromptTemplate:
@@ -154,7 +162,7 @@ class RagProvider:
         )
         return prompt
 
-    def build_rag_pipeline(self, prompt, top_k=5):
+    def build_rag_pipeline(self, prompt):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
         # get the top k similar documents
@@ -168,9 +176,10 @@ class RagProvider:
         self._retrieval_qa = RetrievalQA.from_chain_type(
                 llm=self._llm,
                 chain_type="stuff",
-                retriever=self._vectorstore.as_retriever(),
+                retriever=self._vectorstore.as_retriever(search_kwargs={"score_threshold":None, "distance_threshold":.5, "k":10}),
                 chain_type_kwargs={"prompt":prompt_template}, 
                 verbose=True
+                
             )
     def query_rag_pipeline(self, query):
         return self._retrieval_qa.invoke({"query":query})
