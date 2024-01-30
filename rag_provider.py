@@ -45,7 +45,7 @@ class RagProvider:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
         r.sadd(INDEX_SET_NAME, index_name)
         
-    def list_indexes(self):
+    def list_indexes(self) -> set:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
         return r.smembers(INDEX_SET_NAME)
 
@@ -118,6 +118,7 @@ class RagProvider:
                 print(e)
                 pass
         else:            
+            
             # Load Redis with documents
             vectorstore = Redis.from_documents(
                 documents=texts,
@@ -172,7 +173,7 @@ class RagProvider:
                 verbose=True
             )
     def query_rag_pipeline(self, query):
-        return self._retrieval_qa.run({"query":query})
+        return self._retrieval_qa.invoke({"query":query})
         # query the cchain
         
         

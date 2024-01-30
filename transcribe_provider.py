@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 WHISPER_MODEL = os.getenv("WHISPER_MODEL")
 def transcribe(mp3_file):
-    model = whisper.load_model(WHISPER_MODEL)
+    model = whisper.load_model(WHISPER_MODEL,device="cuda")
     result = model.transcribe(mp3_file)
     dir_name = os.path.dirname(mp3_file)
     writer = get_writer("tsv", output_dir=dir_name)

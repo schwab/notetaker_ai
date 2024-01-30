@@ -2,10 +2,12 @@ import click
 import questionary
 from rich.table import Table
 from rich.console import Console
+from literature_notes_provider import LiteratureNoteProvider, BASE_LITERATURE_NOTES_KEY
 from manager_hdf5 import ManageHDF5, BASE_VIDEO_KEY
 #from prompt_manager import PROMPT_TYPES, PromptManager
 from prompt_manager_redis import PromptManagerRedis as PromptManager, PROMPT_TYPES
 from transcribe_provider import transcribe
+from video_provider import VideoProvider
 from yt_dlp_mp3 import download_audio, MP3_PATH
 import os
 import pandas as pd
@@ -15,9 +17,11 @@ import math
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
 from requests.models import PreparedRequest
+from langchain_core.documents import Document
 
 from rich.markdown import Markdown
 from rag_provider import RagProvider
+from transcript_provider import TranscriptProvider
 
 EXIT = "Exit🚪"
 LITERATURE = "Literature 📚"
@@ -64,24 +68,27 @@ def create_df_table(title:str="dataframe", df:pd.DataFrame=pd.DataFrame.empty):
         table.add_row(*s_row, style="cyan")
     return table
 
-def show_state(columns:list[str]=None, state_filter:str=None):
+def show_video_queue_state(columns:list[str]=None, state_filter:str=None):
     """Show the current state of the queue."""
-    manager = ManageHDF5()
-    df = manager.get_dataframe("queue",BASE_VIDEO_KEY)
+    vp = VideoProvider()
+    waiting = vp.get_waiting()
+    mp3_downloaded = vp.get_mp3_downloaded()
+    transcribed = vp.get_transcribed()
+    max_l = max(len(waiting), len(mp3_downloaded), len(transcribed))
+    if max_l == 0:
+        print("No videos in queue")
+        return
+    # pad the lists to the same length
+    waiting.extend([""]*(max_l-len(waiting)))
+    mp3_downloaded.extend([""]*(max_l-len(mp3_downloaded)))
+    transcribed.extend([""]*(max_l-len(transcribed)))
+    # create a dataframe
+    df = pd.DataFrame({"waiting":waiting, "mp3_downloaded":mp3_downloaded, "transcribed":transcribed})
     if df.empty:
         print("No videos in queue")
         return
-    if columns is None:
-        columns = list(df.columns)
-        
-        # let the user select which columns to show
-        columns = questionary.checkbox("Which columns would you like to show?", choices=columns).ask()
-    
-    # filter to state specified by state_filter
-    if not state_filter is None:
-        df = df[df["status"]==state_filter]
     # display table
-    t = create_df_table("Video Queue", df[columns])
+    t = create_df_table("Video Queue", df)
     console = Console()
     console.print(t)
 
@@ -124,6 +131,7 @@ def rag_menu():
     options_requring_index = [
                               QUERY + " " + INDEX,
                               ADD + " to " + INDEX,
+                              ADD + " Transcript to " + INDEX,
                               ]
     options_requring_rag_prompt = [
         RAG + " " + QUERY
@@ -131,6 +139,7 @@ def rag_menu():
     should_exit = False
     selected_index = ""
     ragp = RagProvider()
+    rag_prompt = None
     while not should_exit:
         # Toggle availablilty of options based on state of vectorstore selected
         if ragp.index_set:
@@ -157,21 +166,43 @@ def rag_menu():
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == "Select " + INDEX:
             
-            indexes = ragp.list_indexes()
-            if indexes:
-                selected_index = questionary.select("Which index would you like to use?", choices=indexes).ask()
-                if selected_index:
-                    selected = ragp.get_existing_index(selected_index)
-                    if selected:
-                        print(f"Selected {selected_index}")
-                    else:
-                        print(f"Could not find {selected_index}")
-                    #selected_files = get_file_list("data/")
-                    #texts = ragp.get_documents_from_file_paths(selected_files)
+            indexes = ragp.list_indexes() 
+            indexes.add("NEW")
+            selected_index = questionary.select("Which index would you like to use?", choices=indexes).ask()
+            if not selected_index == "NEW":
+                selected = ragp.get_existing_index(selected_index)
+                if selected:
+                    print(f"Selected {selected_index}")
+                else:
+                    print(f"Could not find {selected_index}")
+                
             else: 
                 index_name = questionary.text("What should the index be called?").ask()
-                selected_files = get_file_list("data/")  
-                texts = ragp.get_documents_from_file_paths(selected_files)
+                # ask the user if it's from text files or from transcripts
+                answer = questionary.select("Where should the documents come from?", choices=["Text Files", "Transcripts"]).ask()
+                texts = []
+                if answer == "Text Files":
+                    selected_files = get_file_list("data/")  
+                    texts = ragp.get_documents_from_file_paths(selected_files)
+                if answer == "Transcripts":
+                    # get a list of the existing transcripts
+                    manager = TranscriptProvider()
+                    transcripts = manager.get_keys()
+                    # show the list of transcripts and let the user pick multiple
+                    transcript_keys = questionary.checkbox("Which transcripts would you like to add?", choices=transcripts).ask()
+                    for key in transcript_keys:
+                        transcript = manager.get_document(key)
+                        block = []
+                        
+                        while not len(transcript) == 0:
+                            for i in range(0,4):
+                                if len(transcript) > 0:
+                                    line = transcript.pop(0)
+                                    block.append(line)
+                                else:
+                                    break
+                            part = Document(page_content=" ".join(block),metadata={"path":key})
+                            texts.append(part)
                 ragp.get_index(index_name, texts)
         
         if answer == QUERY + " " + INDEX:
@@ -189,20 +220,31 @@ def rag_menu():
             else:
                 texts = ragp.get_documents_from_file_paths(selected_files)
                 ragp.add_documents(texts)
+        if answer == ADD + " Transcript to " + INDEX:
+            # get a list of the existing transcripts
+            manager = TranscriptProvider()
+            transcripts = manager.get_keys()
+            # show the list of transcripts and let the user pick one
+            transcript_key = questionary.select("Which transcript would you like to add?", choices=transcripts).ask()
+            if transcript_key:
+                transcript = manager.get_document(transcript_key)
+                ragp.add_documents([transcript])
+                
         if answer == RAG + " " + QUERY:
             # Allow user to select an rag_prompt
-            prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
-            if prompt:
-                # Allow user to enter a query
-                query = questionary.text("What is your query?").ask()
-                # Get the results
-                ragp.build_rag_pipeline(prompt)
-                results = ragp.query_rag_pipeline(query)
-                # Display the results
-                md = Markdown(results)
-                console=Console()
-                console.print(md)
-                #print(results)
+            if rag_prompt is None:
+                rag_prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
+            
+            # Allow user to enter a query
+            query = questionary.text("What is your query?").ask()
+            # Get the results
+            ragp.build_rag_pipeline(rag_prompt)
+            results = ragp.query_rag_pipeline(query)
+            # Display the results
+            md = Markdown(results)
+            console=Console()
+            console.print(md)
+            #print(results)
                 
         if answer == EXIT:
             should_exit = True
@@ -214,20 +256,20 @@ def video_menu():
                ADD + " " + MP3,
                DOWNLOAD + " " + VIDEO,
                "Download All Pending Videos",
-               "Remove Video", 
+               "Remove " + VIDEO, 
                DELETE + " " + VIDEO + QUEUE, 
                EXIT]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == DISPLAY + " " + VIDEO + QUEUE:
-            show_state()
+            show_video_queue_state()
         if answer == ADD + " " + VIDEO :
             path = questionary.text("Enter the path to the video").ask()
-            manager = ManageHDF5()
-            manager.add_video_to_process(path)
+            vp = VideoProvider()
+            vp.add_to_waiting(path)
         
-        if answer == "Remove Video":
+        if answer == "Remove " + VIDEO:
             # get a list of the existing videos
             manager = ManageHDF5()
             videos = manager.get_unprocessed_videos_in_queue()
@@ -236,8 +278,11 @@ def video_menu():
             
             manager.remove_video_to_process(path)
         if answer == DOWNLOAD + " " + VIDEO:
-            manager = ManageHDF5()
-            videos = manager.get_unprocessed_videos_in_queue()
+            vp = VideoProvider()
+            videos = vp.get_waiting()
+            if not videos:
+                print("No videos in queue")
+                continue
             path = questionary.select("Which video would you like to download?", choices=videos).ask()
             info_dict = download_audio(path)
             #mp3_file = os.path.join(MP3_PATH, info_dict["title"] + ".mp3")
@@ -248,30 +293,35 @@ def video_menu():
                        "channel_url":info_dict["channel_url"],
                        "channel":info_dict["channel"],
                        "duration":info_dict["duration_string"],
-                       "key_name":info_dict["key"]
+                       "key_name":info_dict["key"], 
+                       "video_path":path
                        }  
-            
-            manager.set_video_properties(path, d_props)
+            vp.put_document(info_dict["key"], ["WAITING"], attributes=d_props)
+            vp.waiting_to_mp3_downloaded(path, info_dict["key"])
             
         if answer == ADD + " " + MP3:
-            manager = ManageHDF5()
             _,_,files = next(os.walk(MP3_PATH))
             mp3_file = questionary.select("Which mp3 file would you like to add?", choices=files).ask()
+            vp = VideoProvider()
+            keyname = vp.file_name_to_key(mp3_file.replace(".mp3",""))
             d_props = {"status":"mp3_downloaded",
                           "mp3_file":"data/mp3/" + mp3_file,
-                          "key_name":manager.file_name_to_key(mp3_file.replace(".mp3","")),
-                            "description":manager.file_name_to_key(mp3_file.replace(".mp3","")) + " mp3 file",
+                          "key_name":keyname,
+                            "description":keyname + " mp3 file",
                             "thumbnail_url":"https://via.placeholder.com/150",
                             "channel_url":"https://via.placeholder.com/150",
                             "channel":"Unknown",
-                            "duration":"-1"
+                            "duration":"-1", 
+                            "video_path":keyname + " mp3 file"
                           }
-            manager.add_video_to_process(mp3_file)
-            manager.set_video_properties(mp3_file, d_props)
+            
+            vp.put_document(d_props["key_name"], ["WAITING"], attributes=d_props)
+            vp.add_to_waiting(keyname + " mp3 file")
+            vp.waiting_to_mp3_downloaded(keyname + " mp3 file", d_props["key_name"]) 
             
         if answer == DELETE + " " + VIDEO + QUEUE:
-            manager = ManageHDF5()
-            manager.delete_queue()
+            print("Not implemented")
+            
         if answer == EXIT:
             should_exit = True
 
@@ -280,41 +330,49 @@ def transcribe_menu():
     options = ["Show Transcribed Keys",
                "Ready to Transcribe", 
                "Transcribe",
+               SAVE_FILE,
                "Exit"]
     should_exit = False
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
         
         if answer == "Show Transcribed Keys":
-            manager = ManageHDF5()
-            keys = manager.get_keys(under="/transcripts")
+            t_provider = TranscriptProvider()
+            keys = t_provider.get_keys()
             for key in keys:
                 print(key)
-                
-        if answer == "Ready to Transcribe":
-            show_state(columns=["key_name"], state_filter="mp3_downloaded")
-        
+          
         if answer == "Transcribe":
-            manager = ManageHDF5()
-            df = manager.get_dataframe("queue",BASE_VIDEO_KEY)
-            if df.empty:
-                print("No videos in queue")
-                return
-            keys = df[df["status"]=="mp3_downloaded"]["key_name"].values
-            if len(keys) == 0:
+            video_provider = VideoProvider()
+            #l_videos = video_provider.get_waiting()
+            #if l_videos:
+            #    print("No videos in queue")
+            #    break
+            ready_to_transcribe = video_provider.get_mp3_downloaded()
+            if not ready_to_transcribe:
                 print("No videos ready to transcribe")
-                return
-            mp3_files = df[df["status"]=="mp3_downloaded"]["mp3_file"].values   
-            mp3_files = [os.path.join(base_dir(), mp3_file) for mp3_file in mp3_files]
-            key = questionary.select("Which video would you like to transcribe?", choices=keys).ask()
-            d_keys_mp3 = dict(zip(keys, mp3_files))
-            for k,v in d_keys_mp3.items():
-                print("Transcribing: ", k)
-                tsv_file = transcribe(v)
-                df = pd.read_csv(tsv_file, sep="\t")
-                manager.save_df_to_hd5(df, key=k)  
-                os.remove(tsv_file)   
-        
+                break
+            selected_video_key = questionary.select("Which video would you like to transcribe?", choices=ready_to_transcribe).ask()
+            selected_video_attribs = video_provider.get_document_attributes(selected_video_key)
+            mp3_file_name = selected_video_attribs.get("mp3_file")
+            key_name = selected_video_attribs.get("key_name")
+            print("Transcribing: ", mp3_file_name)
+            tsv_file = transcribe(mp3_file_name)
+            df = pd.read_csv(tsv_file, sep="\t")
+            #print(df)
+            # TODO: save the transcript and its timestamps to redis
+            tp = TranscriptProvider()
+            tp.save_transcript(key_name, df, selected_video_attribs)
+            video_provider.mp3_downloaded_to_transcribed(key_name)
+            #os.remove(tsv_file)   
+        if answer == SAVE_FILE:
+            # choose the /transcripts key to save
+            manager = TranscriptProvider()
+            keys = manager.get_keys()
+            key = questionary.select("Which transcript would you like to save?", choices=keys).ask()
+            text = manager.get_document(key)
+            prompt_save_file(text, key, default_path=f"data/transcript_{key.replace('transcripts:','')}.md")
+            
         if answer == "Exit":
             should_exit = True
 
@@ -336,7 +394,7 @@ def convert_url(url, start):
               
 def prompt_save_file(lines:list[str], key:str, default_path:str ="data/lit_{key}.md"):
     # choose the file name to save to
-    file_name = questionary.text("What should the file name be?", default=default_path.format(key=key)).ask()
+    file_name = questionary.text("What should the file name be?", default=default_path.replace("{key}", key)).ask()
     with open(file_name, 'w') as f:
         f.write("\n".join(lines))
         
@@ -354,18 +412,19 @@ def literature_note_menu():
     should_exit = False
     p_note_names = []
     lit_note_key = None
+    # TODO: convert all transcripts methods to use redis
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == f"{LIT_NOTES} {KEYS}":
-            manager = ManageHDF5()
-            keys = manager.get_keys(under="/literature_notes")
+            manager = LiteratureNoteProvider()
+            keys = manager.get_keys()
             for key in keys:
                 print(key)
 
         if answer == f"Create {LIT_NOTES}":
-            manager = ManageHDF5()
             # Choose one or more transcriptions to process
-            transcripts = manager.get_keys(under="/transcripts")
+            manager = TranscriptProvider()
+            transcripts = manager.get_keys()
             if len(transcripts) == 0:
                 print("No transcripts to process")
                 continue
@@ -373,21 +432,25 @@ def literature_note_menu():
             batch_size = questionary.text("How many lines in each batch?", default="10").ask()
             selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
             literature_prompts = PromptManager().prompts_by_type("literature_note")
+            if not literature_prompts:
+                print("Please add a literature prompt to use.")
+                continue
             prompt_key = questionary.select("Which prompt should be used?", choices=literature_prompts).ask()
             for key in selected_keys:
-                manager.generate_each_batch(transcript_key=key, prompt_key=prompt_key, destination_base="/literature_notes", batch_size=int(batch_size) )
+                lit_note_manager = LiteratureNoteProvider(src_document_key=key)
+                lit_note_manager.generate_each_batch(transcript_key=key, prompt_key=prompt_key, destination_base="literature_notes", batch_size=int(batch_size) )
         
         if answer == DISPLAY + " " + LIT_NOTES:
-            manager = ManageHDF5()
-            # choose the literature notes to display
-            keys = manager.get_keys(under="/literature_notes")
+            manager = LiteratureNoteProvider()
+            keys = manager.get_keys()
             key = questionary.select("Which literature notes would you like to display?", choices=keys).ask()
-            df = manager.get_dataframe(key, "/literature_notes")
-            t = create_df_table("Literature Notes", df)
-            console = Console()
-            console.print(t)
+            results = manager.get_document(key)
+            md = Markdown(" ".join(results))
+            console=Console()
+            console.print(md)
         
         if answer == UPLOAD + " " + LIT_NOTES:
+            # TODO: convert to redis
             manager = ManageHDF5()
             # chooose the md file to upload
             file_name = questionary.text("What is the file name?", default="data/lit_notes.md").ask() 
@@ -404,29 +467,33 @@ def literature_note_menu():
             manager.save_df_to_hd5(df, key=key, base="/literature_notes")
         
         if answer == SAVE_FILE:
-            manager = ManageHDF5()
+            # TODO: convert to redis
             # choose the /transcripts key to save
-            transcripts = manager.get_keys(under="/transcripts")
-            key = questionary.select("Which transcript would you like to save?", choices=transcripts).ask()
+            manager = LiteratureNoteProvider()
+            keys = manager.get_keys()
+            key = questionary.select("Which transcript would you like to save?", choices=keys).ask()
             
-            lines = []
-            df = manager.get_dataframe( key, "/literature_notes")
-            # lookup the /status df
-            status_df = manager.get_dataframe("queue", BASE_VIDEO_KEY)
-            # find the current video record
-            status_row = status_df[status_df["key_name"]==key]
+            #lines = []
+            lines = manager.get_document(key)
+            timestamps = manager.get_document_timestamps(key)
+            transcript_provider = TranscriptProvider()
+            transcript_key = key.replace(BASE_LITERATURE_NOTES_KEY + ":","")
+            attribs = transcript_provider.get_document_attributes(transcript_key)
+            
             # get the video url
-            video_url = status_row["video_path"].values[0]
-            for r in df.itertuples():
-                # split the topic into lines
-                parts = r.text.split("\n")
-                # get the time start for this topic
-                time_start = int(round(r.start/1000,0))
+            video_url = attribs.get("video_path")
+            final_lines = []
+            for i in range(0, len(lines)):
+                start = timestamps[i]
+                time_start = int(round(int(start)/1000,0))
                 url = convert_url(video_url, time_start)
-                parts.insert(1,f"[Source Clip]({url})")
-                lines.extend(parts)
-            prompt_save_file(lines, key, default_path="data/lit_%s.md")
-            
+                final_lines.append(lines[i])
+                
+                final_lines.append(f"- [Source Clip]({url})")
+                final_lines.append(" ")
+                final_lines.append("--------")
+                
+            prompt_save_file(final_lines, key, default_path="data/lit_{key}.md")
         
         if answer == f"{GENERATE} {PERMANANT_NOTE} {NAMES}":
             # Choose the literature notes to process
@@ -470,8 +537,6 @@ def literature_note_menu():
                 potential_note_name = manager.file_name_to_key(p_note_name)
                 p_note_name = questionary.text("Enter a note name to store...", default=potential_note_name).ask()
                 prompt_save_file(result, p_note_name, default_path="data/notes/pn_{key}.md")
-                
-            #print(result)
           
         if answer == DELETE + " " + LIT_NOTES:
             manager = ManageHDF5()
