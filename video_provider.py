@@ -8,6 +8,7 @@ BASE_VIDEO_KEY = os.getenv("BASE_VIDEO_KEY", "video")
 TRANSCRIBED_QUEUE = os.getenv("TRANSCRIBED_QUEUE", "transcribed")
 MP3_DOWNLOADED_QUEUE = os.getenv("MP3_DOWNLOADED_QUEUE", "mp3_downloaded")
 WAITING_QUEUE = os.getenv("WAITING_QUEUE", "waiting")
+ELIMINATE_KEY_CHARS = os.getenv("ELIMINATE_KEY_CHARS", [".", ":", "-", ",","|","/","\\","(",")","[","]","{","}","'"])
 
 class VideoProvider(DocumentMangerRedis):
     def __init__(self):
@@ -28,6 +29,11 @@ class VideoProvider(DocumentMangerRedis):
     def mp3_downloaded_to_transcribed(self, video_url):
         super().redis.srem(BASE_VIDEO_KEY + ":" + MP3_DOWNLOADED_QUEUE, 0, video_url)
         super().redis.sadd(BASE_VIDEO_KEY + ":" + TRANSCRIBED_QUEUE, video_url)
+    def file_name_to_key(self, file_name:str):
+        eliminate_chars = [".tsv", ".csv"] + ELIMINATE_KEY_CHARS    
+        for c in eliminate_chars:
+            file_name = file_name.replace(c,"_")
+        return file_name.replace(" ","_").replace("__","_").lower()[:100]
     
         
     

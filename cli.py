@@ -17,6 +17,7 @@ import math
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
 from requests.models import PreparedRequest
+from langchain_core.documents import Document
 
 from rich.markdown import Markdown
 from rag_provider import RagProvider
@@ -130,6 +131,7 @@ def rag_menu():
     options_requring_index = [
                               QUERY + " " + INDEX,
                               ADD + " to " + INDEX,
+                              ADD + " Transcript to " + INDEX,
                               ]
     options_requring_rag_prompt = [
         RAG + " " + QUERY
@@ -137,6 +139,7 @@ def rag_menu():
     should_exit = False
     selected_index = ""
     ragp = RagProvider()
+    rag_prompt = None
     while not should_exit:
         # Toggle availablilty of options based on state of vectorstore selected
         if ragp.index_set:
@@ -163,21 +166,43 @@ def rag_menu():
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == "Select " + INDEX:
             
-            indexes = ragp.list_indexes()
-            if indexes:
-                selected_index = questionary.select("Which index would you like to use?", choices=indexes).ask()
-                if selected_index:
-                    selected = ragp.get_existing_index(selected_index)
-                    if selected:
-                        print(f"Selected {selected_index}")
-                    else:
-                        print(f"Could not find {selected_index}")
-                    #selected_files = get_file_list("data/")
-                    #texts = ragp.get_documents_from_file_paths(selected_files)
+            indexes = ragp.list_indexes() 
+            indexes.add("NEW")
+            selected_index = questionary.select("Which index would you like to use?", choices=indexes).ask()
+            if not selected_index == "NEW":
+                selected = ragp.get_existing_index(selected_index)
+                if selected:
+                    print(f"Selected {selected_index}")
+                else:
+                    print(f"Could not find {selected_index}")
+                
             else: 
                 index_name = questionary.text("What should the index be called?").ask()
-                selected_files = get_file_list("data/")  
-                texts = ragp.get_documents_from_file_paths(selected_files)
+                # ask the user if it's from text files or from transcripts
+                answer = questionary.select("Where should the documents come from?", choices=["Text Files", "Transcripts"]).ask()
+                texts = []
+                if answer == "Text Files":
+                    selected_files = get_file_list("data/")  
+                    texts = ragp.get_documents_from_file_paths(selected_files)
+                if answer == "Transcripts":
+                    # get a list of the existing transcripts
+                    manager = TranscriptProvider()
+                    transcripts = manager.get_keys()
+                    # show the list of transcripts and let the user pick multiple
+                    transcript_keys = questionary.checkbox("Which transcripts would you like to add?", choices=transcripts).ask()
+                    for key in transcript_keys:
+                        transcript = manager.get_document(key)
+                        block = []
+                        
+                        while not len(transcript) == 0:
+                            for i in range(0,4):
+                                if len(transcript) > 0:
+                                    line = transcript.pop(0)
+                                    block.append(line)
+                                else:
+                                    break
+                            part = Document(page_content=" ".join(block),metadata={"path":key})
+                            texts.append(part)
                 ragp.get_index(index_name, texts)
         
         if answer == QUERY + " " + INDEX:
@@ -195,20 +220,31 @@ def rag_menu():
             else:
                 texts = ragp.get_documents_from_file_paths(selected_files)
                 ragp.add_documents(texts)
+        if answer == ADD + " Transcript to " + INDEX:
+            # get a list of the existing transcripts
+            manager = TranscriptProvider()
+            transcripts = manager.get_keys()
+            # show the list of transcripts and let the user pick one
+            transcript_key = questionary.select("Which transcript would you like to add?", choices=transcripts).ask()
+            if transcript_key:
+                transcript = manager.get_document(transcript_key)
+                ragp.add_documents([transcript])
+                
         if answer == RAG + " " + QUERY:
             # Allow user to select an rag_prompt
-            prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
-            if prompt:
-                # Allow user to enter a query
-                query = questionary.text("What is your query?").ask()
-                # Get the results
-                ragp.build_rag_pipeline(prompt)
-                results = ragp.query_rag_pipeline(query)
-                # Display the results
-                md = Markdown(results)
-                console=Console()
-                console.print(md)
-                #print(results)
+            if rag_prompt is None:
+                rag_prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
+            
+            # Allow user to enter a query
+            query = questionary.text("What is your query?").ask()
+            # Get the results
+            ragp.build_rag_pipeline(rag_prompt)
+            results = ragp.query_rag_pipeline(query)
+            # Display the results
+            md = Markdown(results)
+            console=Console()
+            console.print(md)
+            #print(results)
                 
         if answer == EXIT:
             should_exit = True
@@ -266,19 +302,22 @@ def video_menu():
         if answer == ADD + " " + MP3:
             _,_,files = next(os.walk(MP3_PATH))
             mp3_file = questionary.select("Which mp3 file would you like to add?", choices=files).ask()
+            vp = VideoProvider()
+            keyname = vp.file_name_to_key(mp3_file.replace(".mp3",""))
             d_props = {"status":"mp3_downloaded",
                           "mp3_file":"data/mp3/" + mp3_file,
-                          "key_name":manager.file_name_to_key(mp3_file.replace(".mp3","")),
-                            "description":manager.file_name_to_key(mp3_file.replace(".mp3","")) + " mp3 file",
+                          "key_name":keyname,
+                            "description":keyname + " mp3 file",
                             "thumbnail_url":"https://via.placeholder.com/150",
                             "channel_url":"https://via.placeholder.com/150",
                             "channel":"Unknown",
-                            "duration":"-1"
+                            "duration":"-1", 
+                            "video_path":keyname + " mp3 file"
                           }
-            vp = VideoProvider()
+            
             vp.put_document(d_props["key_name"], ["WAITING"], attributes=d_props)
-            vp.add_to_waiting(d_props["key_name"])
-            vp.waiting_to_mp3_downloaded(d_props["key_name"]) 
+            vp.add_to_waiting(keyname + " mp3 file")
+            vp.waiting_to_mp3_downloaded(keyname + " mp3 file", d_props["key_name"]) 
             
         if answer == DELETE + " " + VIDEO + QUEUE:
             print("Not implemented")
@@ -291,6 +330,7 @@ def transcribe_menu():
     options = ["Show Transcribed Keys",
                "Ready to Transcribe", 
                "Transcribe",
+               SAVE_FILE,
                "Exit"]
     should_exit = False
     while not should_exit:
@@ -325,7 +365,14 @@ def transcribe_menu():
             tp.save_transcript(key_name, df, selected_video_attribs)
             video_provider.mp3_downloaded_to_transcribed(key_name)
             #os.remove(tsv_file)   
-        
+        if answer == SAVE_FILE:
+            # choose the /transcripts key to save
+            manager = TranscriptProvider()
+            keys = manager.get_keys()
+            key = questionary.select("Which transcript would you like to save?", choices=keys).ask()
+            text = manager.get_document(key)
+            prompt_save_file(text, key, default_path=f"data/transcript_{key.replace('transcripts:','')}.md")
+            
         if answer == "Exit":
             should_exit = True
 
