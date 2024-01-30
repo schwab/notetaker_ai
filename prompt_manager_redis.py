@@ -9,7 +9,7 @@ PROMPT_TYPES = ["literature_note","permanent_note","rag_prompt"]
 
 class PromptManagerRedis(DocumentMangerRedis):
     def __init__(self):
-        super().__init__()
+        super().__init__(key_prefix=BASE_PROMPTS_KEY)
         self.documents = []
         self.prompt_types = PROMPT_TYPES
         self.base_prompts_key = BASE_PROMPTS_KEY
@@ -54,9 +54,8 @@ class PromptManagerRedis(DocumentMangerRedis):
         path = key
         if not key.startswith(BASE_PROMPTS_KEY):
             path = self.full_key(key)
-        
         data = self.get_document(path)
-        return [str(x, "UTF-8") for x in data]
+        return data
     
     def delete_prompt(self, key:str):
         """

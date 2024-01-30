@@ -2,10 +2,11 @@ from document_manager import DocumentManager, HDF5_PATH
 import os
 from dotenv import load_dotenv
 import h5py
+from document_manager_redis import DocumentMangerRedis
 load_dotenv()
-BASE_NOTES_KEY = os.getenv("BASE_PROMPTS_KEY", "/notes")
+BASE_NOTES_KEY = os.getenv("BASE_PROMPTS_KEY", "notes")
 NOTE_TYPES = ["literature", "permanent"]
-class NotesManager(DocumentManager):
+class NotesManager(DocumentMangerRedis):
     
     
     def full_type_path(self, note_type:str):

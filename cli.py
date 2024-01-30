@@ -2,6 +2,7 @@ import click
 import questionary
 from rich.table import Table
 from rich.console import Console
+from literature_notes_provider import LiteratureNoteProvider, BASE_LITERATURE_NOTES_KEY
 from manager_hdf5 import ManageHDF5, BASE_VIDEO_KEY
 #from prompt_manager import PROMPT_TYPES, PromptManager
 from prompt_manager_redis import PromptManagerRedis as PromptManager, PROMPT_TYPES
@@ -256,7 +257,8 @@ def video_menu():
                        "channel_url":info_dict["channel_url"],
                        "channel":info_dict["channel"],
                        "duration":info_dict["duration_string"],
-                       "key_name":info_dict["key"]
+                       "key_name":info_dict["key"], 
+                       "video_path":path
                        }  
             vp.put_document(info_dict["key"], ["WAITING"], attributes=d_props)
             vp.waiting_to_mp3_downloaded(path, info_dict["key"])
@@ -299,12 +301,8 @@ def transcribe_menu():
             keys = t_provider.get_keys()
             for key in keys:
                 print(key)
-                
-        #if answer == "Ready to Transcribe":
-        # 1   show_state(columns=["key_name"], state_filter="mp3_downloaded")
-        
+          
         if answer == "Transcribe":
-           
             video_provider = VideoProvider()
             #l_videos = video_provider.get_waiting()
             #if l_videos:
@@ -349,7 +347,7 @@ def convert_url(url, start):
               
 def prompt_save_file(lines:list[str], key:str, default_path:str ="data/lit_{key}.md"):
     # choose the file name to save to
-    file_name = questionary.text("What should the file name be?", default=default_path.format(key=key)).ask()
+    file_name = questionary.text("What should the file name be?", default=default_path.replace("{key}", key)).ask()
     with open(file_name, 'w') as f:
         f.write("\n".join(lines))
         
@@ -371,15 +369,15 @@ def literature_note_menu():
     while not should_exit:
         answer = questionary.select("What would you like to do?", choices=options).ask()
         if answer == f"{LIT_NOTES} {KEYS}":
-            manager = ManageHDF5()
-            keys = manager.get_keys(under="/literature_notes")
+            manager = LiteratureNoteProvider()
+            keys = manager.get_keys()
             for key in keys:
                 print(key)
 
         if answer == f"Create {LIT_NOTES}":
-            manager = ManageHDF5()
             # Choose one or more transcriptions to process
-            transcripts = manager.get_keys(under="/transcripts")
+            manager = TranscriptProvider()
+            transcripts = manager.get_keys()
             if len(transcripts) == 0:
                 print("No transcripts to process")
                 continue
@@ -387,21 +385,25 @@ def literature_note_menu():
             batch_size = questionary.text("How many lines in each batch?", default="10").ask()
             selected_keys = questionary.checkbox("Which transcripts should be processed?", choices=transcripts ).ask()
             literature_prompts = PromptManager().prompts_by_type("literature_note")
+            if not literature_prompts:
+                print("Please add a literature prompt to use.")
+                continue
             prompt_key = questionary.select("Which prompt should be used?", choices=literature_prompts).ask()
             for key in selected_keys:
-                manager.generate_each_batch(transcript_key=key, prompt_key=prompt_key, destination_base="/literature_notes", batch_size=int(batch_size) )
+                lit_note_manager = LiteratureNoteProvider(src_document_key=key)
+                lit_note_manager.generate_each_batch(transcript_key=key, prompt_key=prompt_key, destination_base="literature_notes", batch_size=int(batch_size) )
         
         if answer == DISPLAY + " " + LIT_NOTES:
-            manager = ManageHDF5()
-            # choose the literature notes to display
-            keys = manager.get_keys(under="/literature_notes")
+            manager = LiteratureNoteProvider()
+            keys = manager.get_keys()
             key = questionary.select("Which literature notes would you like to display?", choices=keys).ask()
-            df = manager.get_dataframe(key, "/literature_notes")
-            t = create_df_table("Literature Notes", df)
-            console = Console()
-            console.print(t)
+            results = manager.get_document(key)
+            md = Markdown(" ".join(results))
+            console=Console()
+            console.print(md)
         
         if answer == UPLOAD + " " + LIT_NOTES:
+            # TODO: convert to redis
             manager = ManageHDF5()
             # chooose the md file to upload
             file_name = questionary.text("What is the file name?", default="data/lit_notes.md").ask() 
@@ -418,29 +420,33 @@ def literature_note_menu():
             manager.save_df_to_hd5(df, key=key, base="/literature_notes")
         
         if answer == SAVE_FILE:
-            manager = ManageHDF5()
+            # TODO: convert to redis
             # choose the /transcripts key to save
-            transcripts = manager.get_keys(under="/transcripts")
-            key = questionary.select("Which transcript would you like to save?", choices=transcripts).ask()
+            manager = LiteratureNoteProvider()
+            keys = manager.get_keys()
+            key = questionary.select("Which transcript would you like to save?", choices=keys).ask()
             
-            lines = []
-            df = manager.get_dataframe( key, "/literature_notes")
-            # lookup the /status df
-            status_df = manager.get_dataframe("queue", BASE_VIDEO_KEY)
-            # find the current video record
-            status_row = status_df[status_df["key_name"]==key]
+            #lines = []
+            lines = manager.get_document(key)
+            timestamps = manager.get_document_timestamps(key)
+            transcript_provider = TranscriptProvider()
+            transcript_key = key.replace(BASE_LITERATURE_NOTES_KEY + ":","")
+            attribs = transcript_provider.get_document_attributes(transcript_key)
+            
             # get the video url
-            video_url = status_row["video_path"].values[0]
-            for r in df.itertuples():
-                # split the topic into lines
-                parts = r.text.split("\n")
-                # get the time start for this topic
-                time_start = int(round(r.start/1000,0))
+            video_url = attribs.get("video_path")
+            final_lines = []
+            for i in range(0, len(lines)):
+                start = timestamps[i]
+                time_start = int(round(int(start)/1000,0))
                 url = convert_url(video_url, time_start)
-                parts.insert(1,f"[Source Clip]({url})")
-                lines.extend(parts)
-            prompt_save_file(lines, key, default_path="data/lit_%s.md")
-            
+                final_lines.append(lines[i])
+                
+                final_lines.append(f"- [Source Clip]({url})")
+                final_lines.append(" ")
+                final_lines.append("--------")
+                
+            prompt_save_file(final_lines, key, default_path="data/lit_{key}.md")
         
         if answer == f"{GENERATE} {PERMANANT_NOTE} {NAMES}":
             # Choose the literature notes to process
@@ -484,8 +490,6 @@ def literature_note_menu():
                 potential_note_name = manager.file_name_to_key(p_note_name)
                 p_note_name = questionary.text("Enter a note name to store...", default=potential_note_name).ask()
                 prompt_save_file(result, p_note_name, default_path="data/notes/pn_{key}.md")
-                
-            #print(result)
           
         if answer == DELETE + " " + LIT_NOTES:
             manager = ManageHDF5()

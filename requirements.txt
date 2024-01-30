@@ -12,3 +12,4 @@ rich
 redis
 sentence-transformers
 langchain-community
+async-timeout
