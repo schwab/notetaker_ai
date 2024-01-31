@@ -140,6 +140,8 @@ def rag_menu():
     selected_index = ""
     ragp = RagProvider()
     rag_prompt = None
+    top = 10
+    distance = None
     while not should_exit:
         # Toggle availablilty of options based on state of vectorstore selected
         if ragp.index_set:
@@ -204,10 +206,19 @@ def rag_menu():
                             part = Document(page_content=" ".join(block),metadata={"path":key})
                             texts.append(part)
                 ragp.get_index(index_name, texts)
-        
+                
+            distance = questionary.text("What should the distance be?", default="999").ask()
+            if distance:
+                distance = float(distance)
+            top = int(questionary.text("How many results should be returned?", default="10").ask())
+            
+            rag_prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
+            ragp.build_rag_pipeline(rag_prompt, top=top, distance=distance)
+            print("RAG is ready to process queries.")
+                
         if answer == QUERY + " " + INDEX:
             query = questionary.text("What is your query?").ask()
-            results = ragp.query_similar(query)
+            results = ragp.query_similar(query, top_k=top, distance=distance)
             for r in results:
                 print(r)
                 
@@ -232,16 +243,15 @@ def rag_menu():
                 
         if answer == RAG + " " + QUERY:
             # Allow user to select an rag_prompt
-            if rag_prompt is None:
-                rag_prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
+            
             
             # Allow user to enter a query
             query = questionary.text("What is your query?").ask()
             # Get the results
-            ragp.build_rag_pipeline(rag_prompt)
+            
             results = ragp.query_rag_pipeline(query)
             # Display the results
-            md = Markdown(results)
+            md = Markdown(results.get("result"))
             console=Console()
             console.print(md)
             #print(results)
@@ -482,17 +492,19 @@ def literature_note_menu():
             
             # get the video url
             video_url = attribs.get("video_path")
-            final_lines = []
-            for i in range(0, len(lines)):
-                start = timestamps[i]
-                time_start = int(round(int(start)/1000,0))
-                url = convert_url(video_url, time_start)
-                final_lines.append(lines[i])
-                
-                final_lines.append(f"- [Source Clip]({url})")
-                final_lines.append(" ")
-                final_lines.append("--------")
-                
+            if not "mp3 file" in video_url:
+                final_lines = []
+                for i in range(0, len(lines)):
+                    start = timestamps[i]
+                    time_start = int(round(int(start)/1000,0))
+                    url = convert_url(video_url, time_start)
+                    final_lines.append(lines[i])
+                    
+                    final_lines.append(f"- [Source Clip]({url})")
+                    final_lines.append(" ")
+                    final_lines.append("--------")
+            else:
+                final_lines = lines      
             prompt_save_file(final_lines, key, default_path="data/lit_{key}.md")
         
         if answer == f"{GENERATE} {PERMANANT_NOTE} {NAMES}":
