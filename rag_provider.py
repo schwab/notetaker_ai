@@ -142,12 +142,12 @@ class RagProvider:
         self._vectorstore.add_documents(texts)
         return True
     
-    def query_similar(self, query, top_k=10):
+    def query_similar(self, query, top_k=10, distance=None):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
         return self._vectorstore.similarity_search(query, 
                                                    k=top_k, 
-                                                   distance_threshold=0.5)
+                                                   distance_threshold=distance)
     
     def get_prompt(self, prompt_name) -> PromptTemplate:
         """Create the QA chain."""
@@ -162,7 +162,7 @@ class RagProvider:
         )
         return prompt
 
-    def build_rag_pipeline(self, prompt):
+    def build_rag_pipeline(self, prompt, top=5, distance=999):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
         # get the top k similar documents
@@ -176,7 +176,7 @@ class RagProvider:
         self._retrieval_qa = RetrievalQA.from_chain_type(
                 llm=self._llm,
                 chain_type="stuff",
-                retriever=self._vectorstore.as_retriever(search_kwargs={"score_threshold":None, "distance_threshold":.5, "k":10}),
+                retriever=self._vectorstore.as_retriever(search_kwargs={ "distance_threshold":distance, "k":top}),
                 chain_type_kwargs={"prompt":prompt_template}, 
                 verbose=True
                 

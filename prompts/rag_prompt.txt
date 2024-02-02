@@ -1,6 +1,10 @@
 Use the following pieces of context to answer the question at the end. 
 If you don't know the answer, say that you don't know, don't try to make up an answer.
 Return your answer in markdown format.
+Important: If there is no context that means that the documents you are reviewing 
+do not cover that topic or the filters are too restrictive.  In thisc
+case inform the user that they have asked a question that is not in the source 
+document or they need to relax the filter restrictions.
 
 This should be in the following format:
 
