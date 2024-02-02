@@ -9,6 +9,8 @@ from langchain_core.documents import Document
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 from langchain_community.chat_models import ChatOllama
+from scipy import optimize
+import numpy
 
 from dotenv import load_dotenv
 from prompt_manager_redis import PromptManagerRedis
@@ -78,7 +80,7 @@ class RagProvider:
 
     def get_documents_from_file_paths(self, paths: list[str]):
         texts = []
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, add_start_index = True)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, add_start_index = True)
         for path in paths:
             with open(path, "r") as f:
                 text = f.read()
@@ -131,7 +133,7 @@ class RagProvider:
             return vectorstore
         
     def generate_documents_from_text(self, text:str, metadata={}):
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, add_start_index = True)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, add_start_index = True)
         lines = text_splitter.split_text(text)
         texts = []
         for line in lines:
@@ -162,6 +164,7 @@ class RagProvider:
         )
         return prompt
 
+
     def build_rag_pipeline(self, prompt, top=5, distance=999):
         if self._vectorstore is None:
             raise Exception("No vectorstore loaded")
@@ -186,3 +189,30 @@ class RagProvider:
         # query the cchain
         
         
+    def optimize_distance(self, query, target_count:int=7):
+
+        def distance_func(distance, q, target):
+            distance = max(distance, 0)
+            print(distance, q, target)
+            d_min = lambda x: pow(max(x,0) - target,2)
+            if isinstance(distance, numpy.ndarray):
+                match_count = len(self.query_similar(q, distance=distance[0], top_k=100))
+            else:
+                match_count = len(self.query_similar(q, distance=distance,top_k=100) )
+            if match_count == 0:
+                print(0, 300)
+                return 300
+            if match_count < target_count:
+                match_count = (target_count - match_count)^2
+            if match_count > target_count:
+                max_14= min(match_count, 14)
+                match_count = (max_14-target_count)^2
+            d = d_min(match_count)
+            print(match_count, d)
+            return d
+            
+        opt_res = optimize.minimize(distance_func, x0=.655, args=(query, target_count), method="Powell", tol=.01)
+        if opt_res.success:
+            return float(opt_res.x[0])
+        else:
+            return .71

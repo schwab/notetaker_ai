@@ -50,6 +50,8 @@ TYPE = "Type"
 INDEX = "Index 📇"
 QUERY = "Query 🔍"
 LLM = "LLM 🧠"
+OPTIMIZE = "Optimize"
+DISTANCE = "Distance"
 
 def base_dir():
     return os.path.dirname(os.path.realpath(__file__))
@@ -130,6 +132,7 @@ def rag_menu():
                               "Set " + PROMPT,"""
     
     options_requring_index = [
+                            OPTIMIZE + " " + DISTANCE,
                               QUERY + " " + INDEX,
                               ADD + " to " + INDEX,
                               ADD + " Transcript to " + INDEX,
@@ -208,15 +211,23 @@ def rag_menu():
                             texts.append(part)
                 ragp.get_index(index_name, texts)
                 
-            distance = questionary.text("What should the distance be?", default="999").ask()
+            distance = .71
             if distance:
                 distance = float(distance)
-            top = int(questionary.text("How many results should be returned?", default="10").ask())
+            top = 7
             
             rag_prompt = questionary.select("Which prompt would you like to use?", choices=rag_prompts).ask()
             ragp.build_rag_pipeline(rag_prompt, top=top, distance=distance)
             print("RAG is ready to process queries.")
-                
+        
+        if answer == OPTIMIZE + " " + DISTANCE:
+            query = questionary.text("Enter a query to optimize with.").ask()
+            # how many results should be targetted
+            target_count = int(questionary.text("How many results should be targetted?", default="7").ask() )
+            distance = ragp.optimize_distance(query, target_count=target_count)
+            print("Optimized distance : " + str(distance))
+            ragp.build_rag_pipeline(prompt=rag_prompt, top=top, distance=distance)
+        
         if answer == QUERY + " " + INDEX:
             query = questionary.text("What is your query?").ask()
             results = ragp.query_similar(query, top_k=top, distance=distance)
@@ -232,6 +243,7 @@ def rag_menu():
             else:
                 texts = ragp.get_documents_from_file_paths(selected_files)
                 ragp.add_documents(texts)
+        
         if answer == ADD + " Transcript to " + INDEX:
             # get a list of the existing transcripts
             manager = TranscriptProvider()
