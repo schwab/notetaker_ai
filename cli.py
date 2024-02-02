@@ -122,6 +122,7 @@ def get_file_list(path:str, file_extension:list[str]=["md","txt"]):
 def rag_menu():
     """Menu for creating RAG queries against a redis store"""
     options = ["Select " + INDEX, 
+               
                EXIT
                ]
     """ADD + " to " + INDEX,
@@ -227,8 +228,12 @@ def rag_menu():
             # show the list of transcripts and let the user pick one
             transcript_key = questionary.select("Which transcript would you like to add?", choices=transcripts).ask()
             if transcript_key:
-                transcript = manager.get_document(transcript_key)
-                ragp.add_documents([transcript])
+                document = manager.get_document(transcript_key)
+                # strip witespace only lines
+                text = " ".join([x for x in document if not len(x) == 0 and not x == "\n" ])
+                documents = ragp.generate_documents_from_text(text, metadata={"source":transcript_key})
+                
+                ragp.add_documents(documents)
                 
         if answer == RAG + " " + QUERY:
             # Allow user to select an rag_prompt
@@ -241,7 +246,7 @@ def rag_menu():
             ragp.build_rag_pipeline(rag_prompt)
             results = ragp.query_rag_pipeline(query)
             # Display the results
-            md = Markdown(results)
+            md = Markdown(results.get("result"))
             console=Console()
             console.print(md)
             #print(results)
@@ -255,9 +260,8 @@ def video_menu():
                ADD + " " + VIDEO,
                ADD + " " + MP3,
                DOWNLOAD + " " + VIDEO,
-               "Download All Pending Videos",
+               DOWNLOAD + " All Pending " + VIDEO,
                "Remove " + VIDEO, 
-               DELETE + " " + VIDEO + QUEUE, 
                EXIT]
     should_exit = False
     while not should_exit:
@@ -270,13 +274,20 @@ def video_menu():
             vp.add_to_waiting(path)
         
         if answer == "Remove " + VIDEO:
+            vp = VideoProvider()
+            
             # get a list of the existing videos
-            manager = ManageHDF5()
-            videos = manager.get_unprocessed_videos_in_queue()
+            videos = vp.get_waiting()
             # show the list of videos and let the user pick one
             path = questionary.select("Which video would you like to remove?", choices=videos).ask()
-            
-            manager.remove_video_to_process(path)
+            vp.delete_document(path)
+        if answer == DOWNLOAD + " All Pending " + VIDEO:
+            vp = VideoProvider()
+            videos = vp.get_waiting()
+            for v in videos:
+                print(f'Downloading {v}...')
+                vp.download_video_mp3(v)
+
         if answer == DOWNLOAD + " " + VIDEO:
             vp = VideoProvider()
             videos = vp.get_waiting()
@@ -284,43 +295,19 @@ def video_menu():
                 print("No videos in queue")
                 continue
             path = questionary.select("Which video would you like to download?", choices=videos).ask()
-            info_dict = download_audio(path)
-            #mp3_file = os.path.join(MP3_PATH, info_dict["title"] + ".mp3")
-            d_props = {"status":"mp3_downloaded", 
-                       "mp3_file":info_dict["mp3_file"], 
-                       "thumbnail_url":info_dict["thumbnail"],
-                       "description":info_dict["description"],
-                       "channel_url":info_dict["channel_url"],
-                       "channel":info_dict["channel"],
-                       "duration":info_dict["duration_string"],
-                       "key_name":info_dict["key"], 
-                       "video_path":path
-                       }  
-            vp.put_document(info_dict["key"], ["WAITING"], attributes=d_props)
-            vp.waiting_to_mp3_downloaded(path, info_dict["key"])
+            vp.download_video_mp3(path)
             
         if answer == ADD + " " + MP3:
             _,_,files = next(os.walk(MP3_PATH))
             mp3_file = questionary.select("Which mp3 file would you like to add?", choices=files).ask()
             vp = VideoProvider()
-            keyname = vp.file_name_to_key(mp3_file.replace(".mp3",""))
-            d_props = {"status":"mp3_downloaded",
-                          "mp3_file":"data/mp3/" + mp3_file,
-                          "key_name":keyname,
-                            "description":keyname + " mp3 file",
-                            "thumbnail_url":"https://via.placeholder.com/150",
-                            "channel_url":"https://via.placeholder.com/150",
-                            "channel":"Unknown",
-                            "duration":"-1", 
-                            "video_path":keyname + " mp3 file"
-                          }
+            vp.add_mp3_from_file(mp3_file=mp3_file)
             
-            vp.put_document(d_props["key_name"], ["WAITING"], attributes=d_props)
-            vp.add_to_waiting(keyname + " mp3 file")
-            vp.waiting_to_mp3_downloaded(keyname + " mp3 file", d_props["key_name"]) 
-            
-        if answer == DELETE + " " + VIDEO + QUEUE:
-            print("Not implemented")
+        if answer == "Remove " + VIDEO :
+            vp = VideoProvider()
+            videos = vp.get_waiting()
+            path = questionary.select("Which video would you like to remove?", choices=videos).ask()
+            vp.rem_video_waiting(video_url=path)
             
         if answer == EXIT:
             should_exit = True

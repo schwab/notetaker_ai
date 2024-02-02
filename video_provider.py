@@ -36,9 +36,9 @@ class VideoProvider(DocumentMangerRedis):
             file_name = file_name.replace(c,"_")
         return file_name.replace(" ","_").replace("__","_").lower()[:100]
     
-    def rem_video_waiting(self, video_url):
+    def rem_video_waiting(self, video_url)
         super().redis.srem(BASE_VIDEO_KEY + ":" + WAITING_QUEUE, 0, video_url)
-        
+
     def download_video_mp3(self, video_path:str):
         """
         Add a youtube video url to the system (in preparation for download of the mp3 file)
