@@ -481,7 +481,7 @@ def literature_note_menu():
             manager.save_df_to_hd5(df, key=key, base="/literature_notes")
         
         if answer == SAVE_FILE:
-            # TODO: convert to redis
+            
             # choose the /transcripts key to save
             manager = LiteratureNoteProvider()
             keys = manager.get_keys()
@@ -513,10 +513,14 @@ def literature_note_menu():
         
         if answer == f"{GENERATE} {PERMANANT_NOTE} {NAMES}":
             # Choose the literature notes to process
-            manager = ManageHDF5()
+           
+            manager = LiteratureNoteProvider()
+            keys = manager.get_keys()
+            key = questionary.select("Which Literature note would you like to process?", choices=keys).ask()
+            
+            lines = manager.get_document(key)
             p_note_names = []
-            keys = manager.get_keys(under="/literature_notes")
-            key = questionary.select("Which literature notes would you like to process?", choices=keys).ask()
+            
             lit_note_key = key
             # select prompt to use
             permanent_notes_prompts = PromptManager().prompts_by_type("permanent_note")

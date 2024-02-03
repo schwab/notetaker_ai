@@ -10,6 +10,7 @@ load_dotenv()
 from document_manager_redis import DocumentMangerRedis
 
 BASE_LITERATURE_NOTES_KEY = os.getenv("BASE_LITERATURE_NOTES_KEY", "literature_notes")
+
 class LiteratureNoteProvider(DocumentMangerRedis):
     def __init__(self, src_document_key:str=None):
         super().__init__(key_prefix=BASE_LITERATURE_NOTES_KEY, ignore_postfixes=[":attribs",":timestamps"])
@@ -72,6 +73,30 @@ class LiteratureNoteProvider(DocumentMangerRedis):
         key = self.get_document_key(transcript_key)
         key = key + ":timestamps"
         return self.get_document(key)
+    
+    def generate_permanent_note_names(self, litnote_key, prompt_key:str):
+        """Load the lines from the litnote_key and generate a permanent note 
+        by calling the llm with a prompt.
+
+        Args:
+            litnote_key (_type_): _description_
+            prompt_path (str, optional): _description_. Defaults to "prompts/permanent_note_names.txt".
+        """
+        # load the literature notes
+        l_notes = self.get_document(litnote_key)
+        #df = self.get_dataframe(litnote_key, base=BASE_LITNOTE_KEY)
+        #df = df[(df['text'] != '\n') & (df['text'] != '- \n' )]
+        #lines = df["text"].values.tolist()
+        # load the prompt_text
+        pm = PromptManagerRedis()
+        prompt_text = pm.get_prompt(prompt_key)
+        
+        if not prompt_text:
+            raise ValueError(f"prompt_key {prompt_key} is invalid")
+        prompt_text = "\n".join(prompt_text)
+        llm = LLMManager(prompt_text=prompt_text)
+        result  = llm.generate(text= "\n".join(l_notes))
+        return result.content.replace("<end_message>","").replace("< end message>", "").strip()
 
 
 
