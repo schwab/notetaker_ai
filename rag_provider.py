@@ -51,6 +51,14 @@ class RagProvider:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
         return r.smembers(INDEX_SET_NAME)
 
+    def delete_index_documents(self, index_name):
+        r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
+        keys = r.keys(f"doc:{index_name}:*")
+        for k in keys:
+            r.delete(k)
+        
+        return len(keys)
+    
     def get_existing_index(self, index_name):
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
         if r.sismember(INDEX_SET_NAME, index_name):
@@ -150,7 +158,6 @@ class RagProvider:
         return self._vectorstore.similarity_search(query, 
                                                    k=top_k, 
                                                    distance_threshold=distance)
-    
     def get_prompt(self, prompt_name) -> PromptTemplate:
         """Create the QA chain."""
         
@@ -163,7 +170,6 @@ class RagProvider:
             input_variables=["context", "question"]
         )
         return prompt
-
 
     def build_rag_pipeline(self, prompt, top=5, distance=999):
         if self._vectorstore is None:

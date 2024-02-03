@@ -136,6 +136,7 @@ def rag_menu():
                               QUERY + " " + INDEX,
                               ADD + " to " + INDEX,
                               ADD + " Transcript to " + INDEX,
+                              DELETE + " " + INDEX + " Documents"
                               ]
     options_requring_rag_prompt = [
         RAG + " " + QUERY
@@ -243,6 +244,10 @@ def rag_menu():
             else:
                 texts = ragp.get_documents_from_file_paths(selected_files)
                 ragp.add_documents(texts)
+        if answer == DELETE + " " + INDEX + " Documents":
+            cnt = ragp.delete_index_documents(selected_index)
+            print(f"removed {cnt} documents")
+            
         
         if answer == ADD + " Transcript to " + INDEX:
             # get a list of the existing transcripts
