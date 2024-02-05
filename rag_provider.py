@@ -104,11 +104,20 @@ class RagProvider:
                     embedding=EMBEDDINGS,
                     index_name=index_name,
                     redis_url=REDIS_URL,
-                    schema={"content":"","path":""} 
+                    schema={"content":"","path":"", "source":""} 
                 )
         self._vectorstore = vectorstore
         self._vectorstore_name = index_name
         return vectorstore
+    
+    def get_unique_index_values(self, index_name, field_name:str="source"):
+        r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
+        docs =  r.keys(f"doc:{index_name}:*")
+        s_values = set()
+        for doc in docs:
+            s_values.add(r.hget(doc, field_name))
+        return s_values
+        
     
     def get_vectorstore(self, texts, index_name, force_recreate=False) -> Redis:
         """Create the Redis vectorstore."""
@@ -119,7 +128,7 @@ class RagProvider:
                     embedding=EMBEDDINGS,
                     index_name=index_name,
                     redis_url=REDIS_URL,
-                    schema={"content":"","path":""}
+                    schema={"content":"","path":"","source":""}
                 )
                 self._vectorstore = vectorstore
                 self._vectorstore_name = index_name
@@ -190,16 +199,15 @@ class RagProvider:
                 verbose=True
                 
             )
+    
     def query_rag_pipeline(self, query):
         return self._retrieval_qa.invoke({"query":query})
         # query the cchain
-        
-        
+           
     def optimize_distance(self, query, target_count:int=7):
 
         def distance_func(distance, q, target):
             distance = max(distance, 0)
-            print(distance, q, target)
             d_min = lambda x: pow(max(x,0) - target,2)
             if isinstance(distance, numpy.ndarray):
                 match_count = len(self.query_similar(q, distance=distance[0], top_k=100))
@@ -214,11 +222,13 @@ class RagProvider:
                 max_14= min(match_count, 14)
                 match_count = (max_14-target_count)^2
             d = d_min(match_count)
-            print(match_count, d)
-            return d
             
+            return d
+        #print(f"Optimizing distance to match target count {target_count}")    
         opt_res = optimize.minimize(distance_func, x0=.655, args=(query, target_count), method="Powell", tol=.01)
+        
         if opt_res.success:
+            print(f"Optimized distance: {opt_res.x[0]}")
             return float(opt_res.x[0])
         else:
             return .71

@@ -64,7 +64,7 @@ class VideoProvider(DocumentMangerRedis):
         """
         keyname = self.file_name_to_key(mp3_file.replace(".mp3",""))
         d_props = {"status":"mp3_downloaded",
-                        "mp3_file":"data/mp3/" + mp3_file,
+                        "mp3_file": mp3_file,
                         "key_name":keyname,
                         "description":keyname + " mp3 file",
                         "thumbnail_url":"https://via.placeholder.com/150",
