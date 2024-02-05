@@ -95,30 +95,43 @@ def show_video_queue_state(columns:list[str]=None, state_filter:str=None):
     console.print(t)
 
 def get_file_list(path:str, file_extension:list[str]=["md","txt"]):
-    ## allow the user to select a list of files in the path
-    cur_dir, dirs ,files = next(os.walk(path))
-    ## Allow the user to choose the directory
-    dirs = [d for d in dirs if not d.startswith(".")]
-    dirs = [os.path.join(cur_dir, d) for d in dirs]
-    # get the files in the current directory
-    selected_dir = questionary.select("Which directory would you like to use?", choices=dirs).ask()
-    cur_dir, dirs ,files = next(os.walk(selected_dir))
+    #cur_dir = path
+    selected_dir = path
+    selected_files = []
+    files = None
+    #1 user selects a directory
+    while not files and not selected_dir == "EXIT":
+        ## allow the user to select a list of files in the path
+        cur_dir, dirs , cur_dir_files = next(os.walk(selected_dir))
+        ## Allow the user to choose the directory
+        dirs = [d for d in dirs if not d.startswith(".")]
+        dirs = [os.path.join(cur_dir, d) for d in dirs]
+        dirs.insert(0, ".")
+        dirs.insert(0, "..")
+        dirs.append("EXIT")
+        print("Current Directory: " + cur_dir)
+        for file in cur_dir_files:
+            print(file)
+        # get the files in the current directory
+        selected_dir = questionary.select("Which directory would you like to use?", choices=dirs).ask()
+        if selected_dir == "EXIT":
+            return []
+        if selected_dir == "..":
+            cur_dir = os.path.dirname(cur_dir)
+            continue
+        if selected_dir == ".":
+            files = [os.path.join(cur_dir, f) for f in cur_dir_files]
+            break
+        
     # filter files to only those with the specified extension
     files = [f for f in files if f.split(".")[-1] in file_extension]
     if not files:
         return []
     # use questionary to select the files
     selected_files = questionary.checkbox("Which files would you like to use?", choices=files).ask()
-    selected_files = [os.path.join(selected_dir, f) for f in selected_files]
+    #selected_files = [os.path.join(selected_dir, f) for f in selected_files]
     # ask the user if they want to select files from another directory or continue
-    answer = questionary.confirm("Would you like to select files from another directory?").ask()
-    if answer:
-        # get the new path
-        new_path = questionary.select("Which directory would you like to use?", choices=dirs).ask()
-        # get the files in the new path
-        new_files = get_file_list(os.path.join(selected_dir, new_path))
-        # combine the files
-        selected_files.extend(new_files)
+    
     return selected_files
        
 def rag_menu():
@@ -135,6 +148,7 @@ def rag_menu():
                             OPTIMIZE + " " + DISTANCE,
                               QUERY + " " + INDEX,
                               ADD + " to " + INDEX,
+                              DISPLAY + " " + INDEX + " Source Files",
                               ADD + " Transcript to " + INDEX,
                               ]
     options_requring_rag_prompt = [
@@ -261,17 +275,34 @@ def rag_menu():
         if answer == RAG + " " + QUERY:
             # Allow user to select an rag_prompt
             
-            
-            # Allow user to enter a query
-            query = questionary.text("What is your query?").ask()
-            # Get the results
-            
-            results = ragp.query_rag_pipeline(query)
-            # Display the results
-            md = Markdown(results.get("result"))
-            console=Console()
-            console.print(md)
+            should_exit_rag = False
+            while not should_exit_rag:
+                # Allow user to enter a query
+                query = questionary.text("What is your query (type exit to leave)?").ask()
+                if "exit" == query.lower():
+                    should_exit_rag = True
+                    break
+                # Get the results
+                distance = ragp.optimize_distance(query, target_count=7)
+                #print("Optimized distance : " + str(distance))
+                ragp.build_rag_pipeline(prompt=rag_prompt, top=top, distance=distance)
+                
+                results = ragp.query_rag_pipeline(query)
+                # Display the results
+                md = Markdown(results.get("result"))
+                console=Console()
+                console.print(md)
+                
             #print(results)
+                
+        if answer == DISPLAY + " " + INDEX + " Source Files":
+            # select index name
+            #indexes = ragp.list_indexes()
+            #selected_index = questionary.select("Which index would you like to use?", choices=indexes).ask()
+            # get the unique index source files
+            source_files = ragp.get_unique_index_values(selected_index, field_name="source")
+            for sf in source_files:
+                print(sf)
                 
         if answer == EXIT:
             should_exit = True
@@ -320,10 +351,12 @@ def video_menu():
             vp.download_video_mp3(path)
             
         if answer == ADD + " " + MP3:
-            _,_,files = next(os.walk(MP3_PATH))
-            mp3_file = questionary.select("Which mp3 file would you like to add?", choices=files).ask()
+            files = get_file_list(path="./data", file_extension=["mp3"])
+            #_,_,files = next(os.walk(MP3_PATH))
+            #mp3_file = questionary.select("Which mp3 file would you like to add?", choices=files).ask()
             vp = VideoProvider()
-            vp.add_mp3_from_file(mp3_file=mp3_file)
+            for file in files:
+                vp.add_mp3_from_file(mp3_file=file)
             
         if answer == "Remove " + VIDEO :
             vp = VideoProvider()
@@ -358,9 +391,11 @@ def transcribe_menu():
             #    print("No videos in queue")
             #    break
             ready_to_transcribe = video_provider.get_mp3_downloaded()
+            transcribed = video_provider.get_transcribed()
             if not ready_to_transcribe:
                 print("No videos ready to transcribe")
                 break
+            ready_to_transcribe = set(ready_to_transcribe) - set(transcribed)
             selected_video_key = questionary.select("Which video would you like to transcribe?", choices=ready_to_transcribe).ask()
             selected_video_attribs = video_provider.get_document_attributes(selected_video_key)
             mp3_file_name = selected_video_attribs.get("mp3_file")
